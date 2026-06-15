@@ -11,7 +11,8 @@ import { loadTimeTrackerState, saveTimeTrackerState } from "@/features/time-trac
 import { formatDuration, formatDate, formatTime } from "@/features/time-tracker/time-tracker-utils";
 import type { TimeEntry, TimeCategory, TimeTrackerPeriod } from "@/features/time-tracker/time-tracker-types";
 import { timeCategories } from "@/features/time-tracker/time-tracker-types";
-import { Drawer } from "@/components/ui/drawer";
+import { WorkspaceModal } from "@/components/ui/workspace-modal";
+import { AutoResizeTextarea } from "@/components/ui/auto-resize-textarea";
 
 // Animation configs
 const staggerContainer = {
@@ -225,7 +226,7 @@ export default function TimeTrackerSessionsPage() {
         <div className="flex items-center gap-3 w-full sm:w-auto">
           <select 
             value={categoryFilter} 
-            onChange={(e) => setCategoryFilter(e.target.value as any)}
+            onChange={(e) => setCategoryFilter(e.target.value as TimeCategory | "all")}
             className="h-9 bg-background border border-border rounded-md px-3 text-[13px] text-text-primary focus:outline-accent flex-1 sm:flex-none"
           >
             <option value="all">All Categories</option>
@@ -298,78 +299,78 @@ export default function TimeTrackerSessionsPage() {
         </div>
       </motion.div>
 
-      {/* Drawer */}
-      <Drawer
+      {/* Workspace Modal */}
+      <WorkspaceModal
         isOpen={!!selectedEntry}
         onClose={closeDrawer}
-        title="Session Details"
-        footer={
-          <div className="flex items-center justify-between">
-            <button onClick={executeDelete} className="flex items-center gap-2 h-9 px-4 rounded-md border border-destructive/30 text-destructive hover:bg-destructive/10 transition-colors text-[13px] font-medium">
-              <Trash2 className="h-4 w-4" /> Delete
-            </button>
-            <div className="flex items-center gap-3">
-              <button onClick={closeDrawer} className="text-[13px] font-medium text-text-secondary hover:text-text-primary transition-colors">Cancel</button>
-              <button onClick={executeSave} className="flex items-center gap-2 h-9 px-5 rounded-md bg-accent text-background hover:opacity-90 transition-opacity text-[13px] font-semibold">
-                <Save className="h-4 w-4" /> Save Changes
-              </button>
-            </div>
-          </div>
-        }
-      >
-        {selectedEntry && (
-          <div className="flex flex-col gap-6">
-            
-            {/* Meta */}
-            <div className="bg-background rounded-lg border border-border p-4 flex flex-col gap-3">
-              <div className="flex justify-between items-center">
-                <span className="text-[12px] text-text-tertiary">Date</span>
-                <span className="text-[13px] font-medium text-text-primary">{formatDate(selectedEntry.date)}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-[12px] text-text-tertiary">Time</span>
-                <span className="text-[13px] font-medium text-text-primary">{formatTime(selectedEntry.startTime)} - {formatTime(selectedEntry.endTime)}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-[12px] text-text-tertiary">Duration</span>
-                <span className="text-[13px] font-mono font-medium text-accent">{formatDuration(selectedEntry.duration)}</span>
-              </div>
-            </div>
-
-            {/* Title (Read Only to prevent schema corruption on analytics logic, though we could make it editable. Let's just keep category/notes editable for now) */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[12px] font-medium text-text-tertiary">Title</label>
-              <div className="text-[14px] font-medium text-text-primary px-3 py-2 bg-surface-raised rounded-md border border-border">
+        title="Session Review"
+        leftPanel={
+          selectedEntry ? (
+            <div className="flex flex-col gap-6">
+              <h2 className="text-[32px] font-semibold tracking-tight text-text-primary leading-tight outline-none focus:outline-none mb-4">
                 {selectedEntry.title}
+              </h2>
+              
+              <div className="flex flex-col gap-2">
+                <AutoResizeTextarea 
+                  value={editNotes}
+                  onChange={e => setEditNotes(e.target.value)}
+                  placeholder="Reflect on this session. What did you study? What was challenging? Any key takeaways?"
+                  className="text-[15px] leading-relaxed min-h-[500px]"
+                />
               </div>
             </div>
-
-            {/* Category Edit */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[12px] font-medium text-text-tertiary">Category</label>
-              <select 
-                value={editCategory}
-                onChange={e => setEditCategory(e.target.value as TimeCategory)}
-                className="w-full h-10 bg-background border border-border rounded-md px-3 text-[13px] text-text-primary focus:outline-accent transition-all"
-              >
-                {timeCategories.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
+          ) : null
+        }
+        rightPanel={
+          selectedEntry ? (
+            <div className="flex flex-col h-full">
+              <div className="flex-1 p-6 flex flex-col gap-8">
+                {/* Properties */}
+                <div className="flex flex-col gap-5">
+                  <h3 className="text-[12px] font-medium uppercase tracking-[0.06em] text-text-tertiary">Properties</h3>
+                  
+                  <div className="flex flex-col gap-3">
+                    <div className="flex items-center justify-between text-[13px]">
+                      <span className="text-text-tertiary flex items-center gap-2"><CalendarDays className="h-4 w-4" /> Date</span>
+                      <span className="font-medium text-text-primary">{formatDate(selectedEntry.date)}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-[13px]">
+                      <span className="text-text-tertiary flex items-center gap-2"><Clock className="h-4 w-4" /> Time</span>
+                      <span className="font-medium text-text-primary">{formatTime(selectedEntry.startTime)} - {formatTime(selectedEntry.endTime)}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-[13px]">
+                      <span className="text-text-tertiary flex items-center gap-2"><BarChart2 className="h-4 w-4" /> Duration</span>
+                      <span className="font-mono text-accent">{formatDuration(selectedEntry.duration)}</span>
+                    </div>
+                    
+                    <div className="flex flex-col gap-1.5 mt-2">
+                      <label className="text-[12px] font-medium text-text-tertiary">Category</label>
+                      <select 
+                        value={editCategory}
+                        onChange={e => setEditCategory(e.target.value as TimeCategory)}
+                        className="w-full h-9 bg-background border border-border rounded-md px-3 text-[13px] text-text-primary focus:outline-accent transition-all"
+                      >
+                        {timeCategories.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Sticky Footer */}
+              <div className="p-6 border-t border-border bg-surface flex flex-col gap-3">
+                <button onClick={executeSave} className="w-full h-10 rounded-md bg-accent text-background hover:opacity-90 transition-opacity text-[13px] font-semibold flex items-center justify-center gap-2">
+                  <Save className="h-4 w-4" /> Save Changes
+                </button>
+                <button onClick={executeDelete} className="w-full h-10 rounded-md border border-destructive/30 text-destructive hover:bg-destructive/10 transition-colors text-[13px] font-medium flex items-center justify-center gap-2">
+                  <Trash2 className="h-4 w-4" /> Delete Session
+                </button>
+              </div>
             </div>
-
-            {/* Notes Edit */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[12px] font-medium text-text-tertiary">Session Notes</label>
-              <textarea 
-                value={editNotes}
-                onChange={e => setEditNotes(e.target.value)}
-                placeholder="Add observations, distractions, or summaries from this session..."
-                className="w-full min-h-[120px] bg-background border border-border rounded-md px-3 py-2 text-[13px] text-text-primary focus:outline-accent transition-all resize-y"
-              />
-            </div>
-
-          </div>
-        )}
-      </Drawer>
+          ) : null
+        }
+      />
 
     </div>
   );

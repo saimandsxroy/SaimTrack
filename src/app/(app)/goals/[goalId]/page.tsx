@@ -11,6 +11,7 @@ import { useAuth } from "@/features/auth/auth-context";
 import { loadGoals, saveGoals } from "@/features/goal-tracker/goal-tracker-storage";
 import type { Goal } from "@/features/goal-tracker/goal-tracker-types";
 import { formatDate } from "@/features/time-tracker/time-tracker-utils";
+import { AutoResizeTextarea } from "@/components/ui/auto-resize-textarea";
 
 export default function GoalDetailPage() {
   const { user } = useAuth();
@@ -210,79 +211,72 @@ export default function GoalDetailPage() {
         </div>
       </motion.div>
 
-      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.1 }} className="grid grid-cols-1 xl:grid-cols-[1fr_350px] gap-8">
+      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.1 }} className="flex flex-col lg:flex-row gap-12 lg:gap-16 items-start">
         
-        {/* Main Content */}
-        <div className="flex flex-col gap-6">
-          
-          {/* Notes (Markdown-ish editor) */}
-          <div className="bg-surface rounded-xl border border-border p-6 shadow-sm flex flex-col gap-3">
-            <div className="flex items-center justify-between mb-1">
-              <h2 className="text-[14px] font-medium text-text-primary">Planning & Notes</h2>
+        {/* Left Side: Document Editor (70%) */}
+        <div className="flex-1 w-full flex flex-col gap-6">
+          {isCompleted ? (
+            <div className="w-full text-[15px] text-text-secondary leading-relaxed whitespace-pre-wrap">
+              {notes || "No notes written for this goal."}
             </div>
-            {isCompleted ? (
-              <div className="w-full min-h-[200px] bg-background border border-border rounded-md p-4 text-[14px] text-text-secondary leading-relaxed whitespace-pre-wrap">
-                {notes || "No notes written for this goal."}
-              </div>
-            ) : (
-              <textarea 
-                value={notes}
-                onChange={e => setNotes(e.target.value)}
-                placeholder="Write your plan, thoughts, or markdown notes here..."
-                className="w-full min-h-[300px] bg-background border border-border rounded-md px-4 py-3 text-[14px] text-text-primary focus:outline-accent transition-all resize-y placeholder:text-text-tertiary leading-relaxed font-mono"
-              />
-            )}
-          </div>
-
+          ) : (
+            <AutoResizeTextarea 
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+              placeholder="Write your plan, thoughts, or markdown notes here... Even thousands of words."
+              className="text-[16px] leading-relaxed tracking-normal"
+              minHeight={600}
+            />
+          )}
         </div>
 
-        {/* Sidebar (Milestones & Progress) */}
-        <div className="flex flex-col gap-6">
+        {/* Right Side: Sidebar (30%) */}
+        <div className="w-full lg:w-[320px] shrink-0 flex flex-col gap-8 lg:sticky lg:top-24">
           
           {/* Progress Overview */}
-          <div className="bg-surface rounded-xl border border-border p-6 shadow-sm flex flex-col gap-5">
-            <h3 className="text-[13px] font-medium uppercase tracking-[0.06em] text-text-tertiary">Progress</h3>
+          <div className="flex flex-col gap-3">
+            <h3 className="text-[12px] font-medium uppercase tracking-[0.06em] text-text-tertiary">Progress</h3>
             
-            <div className="flex flex-col gap-2">
-              <div className="flex justify-between items-end">
-                <span className="text-[32px] font-semibold tracking-tight text-text-primary leading-none">{computedProgress}%</span>
-                <span className="text-[12px] text-text-secondary pb-1">{goal.target} Total Required</span>
-              </div>
-              <div className="h-2 w-full bg-surface-raised rounded-full overflow-hidden mt-2">
-                <div 
-                  className={`h-full rounded-full transition-all duration-1000 ${isCompleted ? 'bg-success' : 'bg-accent'}`} 
-                  style={{ width: `${computedProgress}%` }}
-                />
-              </div>
+            <div className="flex justify-between items-end">
+              <span className="text-[32px] font-semibold tracking-tight text-text-primary leading-none">{computedProgress}%</span>
+              <span className="text-[12px] text-text-secondary pb-1">{goal.target} Target</span>
+            </div>
+            <div className="h-2 w-full bg-surface-raised rounded-full overflow-hidden">
+              <div 
+                className={`h-full rounded-full transition-all duration-1000 ${isCompleted ? 'bg-success' : 'bg-accent'}`} 
+                style={{ width: `${computedProgress}%` }}
+              />
             </div>
           </div>
 
+          <hr className="border-border" />
+
           {/* Milestones Checklist */}
-          <div className="bg-surface rounded-xl border border-border p-6 shadow-sm flex flex-col gap-5">
-            <h3 className="text-[13px] font-medium uppercase tracking-[0.06em] text-text-tertiary">Milestones</h3>
+          <div className="flex flex-col gap-4">
+            <h3 className="text-[12px] font-medium uppercase tracking-[0.06em] text-text-tertiary">Milestones</h3>
             
             <div className="flex flex-col gap-1">
               {milestones.map((m, i) => (
-                <div key={m.id} className="group flex items-start gap-3 py-2 border-b border-border/50 last:border-0">
+                <div key={m.id} className="group flex items-start gap-3 py-1.5 border-b border-border/30 last:border-0">
                   <button 
                     disabled={isCompleted}
                     onClick={() => toggleMilestone(m.id)}
-                    className="mt-0.5 shrink-0 text-text-tertiary hover:text-accent transition-colors disabled:opacity-50"
+                    className="mt-1 shrink-0 text-text-tertiary hover:text-accent transition-colors disabled:opacity-50"
                   >
                     {m.completed ? <CheckCircle2 className="h-4 w-4 text-accent" /> : <Circle className="h-4 w-4" />}
                   </button>
-                  <span className={`text-[13px] flex-1 ${m.completed ? 'text-text-tertiary line-through' : 'text-text-primary'}`}>
+                  <span className={`text-[14px] flex-1 leading-snug ${m.completed ? 'text-text-tertiary line-through' : 'text-text-primary'}`}>
                     {m.title}
                   </span>
                   {!isCompleted && (
-                    <button onClick={() => deleteMilestone(m.id)} className="opacity-0 group-hover:opacity-100 text-text-tertiary hover:text-destructive transition-all">
-                      <X className="h-3 w-3" />
+                    <button onClick={() => deleteMilestone(m.id)} className="opacity-0 group-hover:opacity-100 text-text-tertiary hover:text-destructive transition-all mt-0.5">
+                      <X className="h-4 w-4" />
                     </button>
                   )}
                 </div>
               ))}
               {milestones.length === 0 && (
-                <p className="text-[12px] text-text-tertiary italic text-center py-4">No milestones added yet.</p>
+                <p className="text-[13px] text-text-tertiary italic">No milestones added.</p>
               )}
             </div>
 
@@ -292,16 +286,15 @@ export default function GoalDetailPage() {
                   type="text"
                   value={newMilestone}
                   onChange={e => setNewMilestone(e.target.value)}
-                  placeholder="Add a milestone..."
-                  className="flex-1 h-8 bg-background border border-border rounded px-2 text-[12px] text-text-primary focus:outline-accent"
+                  placeholder="Add milestone..."
+                  className="flex-1 h-9 bg-surface border border-border rounded-md px-3 text-[13px] text-text-primary focus:outline-accent"
                 />
-                <button type="submit" disabled={!newMilestone.trim()} className="h-8 px-3 rounded bg-surface-raised border border-border text-text-secondary hover:text-text-primary disabled:opacity-50 transition-colors">
+                <button type="submit" disabled={!newMilestone.trim()} className="h-9 px-3 rounded-md bg-surface border border-border text-text-secondary hover:text-text-primary disabled:opacity-50 transition-colors">
                   <Plus className="h-4 w-4" />
                 </button>
               </form>
             )}
           </div>
-
         </div>
 
       </motion.div>
@@ -310,7 +303,7 @@ export default function GoalDetailPage() {
 }
 
 // Minimal X icon wrapper to avoid huge import
-function X(props: any) {
+function X(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
   );

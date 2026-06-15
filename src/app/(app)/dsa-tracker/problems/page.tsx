@@ -121,19 +121,19 @@ export default function DsaProblemsPage() {
           />
         </div>
         <div className="flex flex-wrap items-center gap-3 w-full xl:w-auto">
-          <select value={topicFilter} onChange={(e) => setTopicFilter(e.target.value as any)} className="h-9 bg-background border border-border rounded-md px-3 text-[13px] text-text-primary focus:outline-accent flex-1 sm:flex-none">
+          <select value={topicFilter} onChange={(e) => setTopicFilter(e.target.value as DsaTopic | "all")} className="h-9 bg-background border border-border rounded-md px-3 text-[13px] text-text-primary focus:outline-accent flex-1 sm:flex-none">
             <option value="all">All Topics</option>
             {dsaTopics.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
-          <select value={difficultyFilter} onChange={(e) => setDifficultyFilter(e.target.value as any)} className="h-9 bg-background border border-border rounded-md px-3 text-[13px] text-text-primary focus:outline-accent flex-1 sm:flex-none">
+          <select value={difficultyFilter} onChange={(e) => setDifficultyFilter(e.target.value as DsaDifficulty | "all")} className="h-9 bg-background border border-border rounded-md px-3 text-[13px] text-text-primary focus:outline-accent flex-1 sm:flex-none">
             <option value="all">All Difficulties</option>
             {dsaDifficulties.map(d => <option key={d} value={d}>{d}</option>)}
           </select>
-          <select value={platformFilter} onChange={(e) => setPlatformFilter(e.target.value as any)} className="h-9 bg-background border border-border rounded-md px-3 text-[13px] text-text-primary focus:outline-accent flex-1 sm:flex-none">
+          <select value={platformFilter} onChange={(e) => setPlatformFilter(e.target.value as DsaPlatform | "all")} className="h-9 bg-background border border-border rounded-md px-3 text-[13px] text-text-primary focus:outline-accent flex-1 sm:flex-none">
             <option value="all">All Platforms</option>
             {dsaPlatforms.map(p => <option key={p} value={p}>{p}</option>)}
           </select>
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as any)} className="h-9 bg-background border border-border rounded-md px-3 text-[13px] text-text-primary focus:outline-accent flex-1 sm:flex-none">
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as "all" | "revision" | "mastered")} className="h-9 bg-background border border-border rounded-md px-3 text-[13px] text-text-primary focus:outline-accent flex-1 sm:flex-none">
             <option value="all">Any Status</option>
             <option value="mastered">Mastered</option>
             <option value="revision">Needs Revision</option>

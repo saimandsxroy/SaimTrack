@@ -41,9 +41,9 @@ export default function AuditPage() {
         } else {
           throw new Error(result.error);
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error("Audit extraction failed:", err);
-        setError(err.message);
+        setError((err as Error).message);
         setStatus("Failed to extract data.");
       }
     }

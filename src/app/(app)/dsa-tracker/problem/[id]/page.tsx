@@ -11,6 +11,7 @@ import { useAuth } from "@/features/auth/auth-context";
 import { loadDsaProblems, saveDsaProblems } from "@/features/dsa-tracker/dsa-tracker-storage";
 import type { DsaProblem } from "@/features/dsa-tracker/dsa-tracker-types";
 import { formatSolvedDate } from "@/features/dsa-tracker/dsa-tracker-utils";
+import { AutoResizeTextarea } from "@/components/ui/auto-resize-textarea";
 
 export default function DsaProblemDetailPage() {
   const { user } = useAuth();
@@ -178,69 +179,69 @@ export default function DsaProblemDetailPage() {
         </div>
       </motion.div>
 
-      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.1 }} className="grid grid-cols-1 xl:grid-cols-[1fr_300px] gap-8">
+      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.1 }} className="flex flex-col lg:flex-row gap-12 lg:gap-16 items-start">
         
-        {/* Main Content (Editors) */}
-        <div className="flex flex-col gap-6">
+        {/* Left Side (70%) - Document Editor */}
+        <div className="flex-1 w-full flex flex-col gap-12">
           
-          {/* Approach Used */}
-          <div className="bg-surface rounded-xl border border-border p-6 shadow-sm flex flex-col gap-3">
-            <div className="flex items-center gap-2 text-[14px] font-medium text-text-primary mb-1">
-              <Lightbulb className="h-4 w-4 text-accent" /> Approach & Intuition
-            </div>
-            <textarea 
+          <div className="flex flex-col gap-2">
+            <h2 className="text-[18px] font-medium text-text-primary flex items-center gap-2">
+              <Lightbulb className="h-5 w-5 text-accent" /> Approach & Intuition
+            </h2>
+            <AutoResizeTextarea 
               value={approachUsed}
               onChange={e => setApproachUsed(e.target.value)}
               placeholder="How did you solve this? What algorithm or data structure was the key?"
-              className="w-full min-h-[120px] bg-background border border-border rounded-md px-4 py-3 text-[14px] text-text-primary focus:outline-accent transition-all resize-y placeholder:text-text-tertiary leading-relaxed"
+              className="text-[15px] leading-relaxed tracking-normal"
+              minHeight={150}
             />
           </div>
 
-          {/* Mistakes Made */}
-          <div className="bg-surface rounded-xl border border-border p-6 shadow-sm flex flex-col gap-3">
-            <div className="flex items-center gap-2 text-[14px] font-medium text-text-primary mb-1">
-              <AlertTriangle className="h-4 w-4 text-warning" /> Mistakes & Edge Cases
-            </div>
-            <textarea 
+          <div className="flex flex-col gap-2">
+            <h2 className="text-[18px] font-medium text-text-primary flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-warning" /> Mistakes & Edge Cases
+            </h2>
+            <AutoResizeTextarea 
               value={mistakesMade}
               onChange={e => setMistakesMade(e.target.value)}
               placeholder="Did you miss any edge cases? TLE? Bugs?"
-              className="w-full min-h-[100px] bg-background border border-border rounded-md px-4 py-3 text-[14px] text-text-primary focus:outline-accent transition-all resize-y placeholder:text-text-tertiary leading-relaxed"
+              className="text-[15px] leading-relaxed tracking-normal"
+              minHeight={150}
             />
           </div>
 
-          {/* General Notes & Learning */}
-          <div className="bg-surface rounded-xl border border-border p-6 shadow-sm flex flex-col gap-3">
-            <div className="flex items-center gap-2 text-[14px] font-medium text-text-primary mb-1">
-              <BookOpen className="h-4 w-4 text-success" /> Key Takeaways
-            </div>
-            <textarea 
+          <div className="flex flex-col gap-2">
+            <h2 className="text-[18px] font-medium text-text-primary flex items-center gap-2">
+              <BookOpen className="h-5 w-5 text-success" /> Key Takeaways
+            </h2>
+            <AutoResizeTextarea 
               value={learningSummary}
               onChange={e => setLearningSummary(e.target.value)}
               placeholder="Summarize the core concept learned here so you can review it later."
-              className="w-full min-h-[100px] bg-background border border-border rounded-md px-4 py-3 text-[14px] text-text-primary focus:outline-accent transition-all resize-y placeholder:text-text-tertiary leading-relaxed"
+              className="text-[15px] leading-relaxed tracking-normal"
+              minHeight={150}
             />
           </div>
           
-          {/* Original Notes (Legacy) */}
-          <div className="bg-surface rounded-xl border border-border p-6 shadow-sm flex flex-col gap-3">
-            <div className="flex items-center gap-2 text-[14px] font-medium text-text-primary mb-1">
-              <History className="h-4 w-4 text-text-tertiary" /> Scratchpad Notes
-            </div>
-            <textarea 
+          <div className="flex flex-col gap-2">
+            <h2 className="text-[18px] font-medium text-text-primary flex items-center gap-2">
+              <History className="h-5 w-5 text-text-tertiary" /> Scratchpad Notes
+            </h2>
+            <AutoResizeTextarea 
               value={notes}
               onChange={e => setNotes(e.target.value)}
               placeholder="Raw notes from your session..."
-              className="w-full min-h-[80px] bg-background border border-border rounded-md px-4 py-3 text-[13px] text-text-primary focus:outline-accent transition-all resize-y placeholder:text-text-tertiary"
+              className="text-[15px] leading-relaxed tracking-normal"
+              minHeight={150}
             />
           </div>
 
         </div>
 
-        {/* Sidebar (Revision Control) */}
-        <div className="flex flex-col gap-6">
-          <div className="bg-surface rounded-xl border border-border p-5 shadow-sm flex flex-col gap-5">
-            <h3 className="text-[13px] font-medium uppercase tracking-[0.06em] text-text-tertiary">Revision Control</h3>
+        {/* Right Side (30%) - Properties Sidebar */}
+        <div className="w-full lg:w-[320px] shrink-0 flex flex-col gap-8 lg:sticky lg:top-24">
+          <div className="flex flex-col gap-6">
+            <h3 className="text-[12px] font-medium uppercase tracking-[0.06em] text-text-tertiary">Revision Control</h3>
             
             <label className="flex items-start gap-3 cursor-pointer group">
               <div className="flex h-5 items-center">
@@ -253,7 +254,7 @@ export default function DsaProblemDetailPage() {
               </div>
               <div className="flex flex-col">
                 <span className="text-[13px] font-medium text-text-primary group-hover:text-accent transition-colors">Needs Revision</span>
-                <span className="text-[11px] text-text-tertiary leading-snug mt-0.5">Mark this if you struggled and want to re-attempt it later.</span>
+                <span className="text-[12px] text-text-tertiary leading-snug mt-0.5">Mark this if you struggled and want to re-attempt it later.</span>
               </div>
             </label>
 
@@ -261,7 +262,7 @@ export default function DsaProblemDetailPage() {
 
             <div className="flex flex-col gap-3">
               <div className="flex items-center justify-between">
-                <span className="text-[12px] font-medium text-text-secondary">Total Revisions</span>
+                <span className="text-[13px] font-medium text-text-secondary">Total Revisions</span>
                 <span className="text-[14px] font-semibold text-text-primary bg-surface-raised px-2 py-0.5 rounded border border-border">
                   {problem.revisions?.length || 0}
                 </span>
@@ -269,17 +270,17 @@ export default function DsaProblemDetailPage() {
               
               <button 
                 onClick={handleLogRevision}
-                className="w-full h-9 rounded-md border border-border bg-background text-text-primary hover:bg-surface-raised transition-colors text-[12px] font-medium flex items-center justify-center gap-2"
+                className="w-full h-9 rounded-md border border-border bg-background text-text-primary hover:bg-surface-raised transition-colors text-[13px] font-medium flex items-center justify-center gap-2"
               >
                 <CheckCircle2 className="h-4 w-4" /> Log Revision Today
               </button>
             </div>
 
             {problem.revisions && problem.revisions.length > 0 && (
-              <div className="flex flex-col gap-2 mt-2">
+              <div className="flex flex-col gap-2 mt-4">
                 <span className="text-[11px] font-medium text-text-tertiary uppercase tracking-wider mb-1">History</span>
                 {problem.revisions.map((rev, idx) => (
-                  <div key={idx} className="flex items-center gap-2 text-[12px] text-text-secondary">
+                  <div key={idx} className="flex items-center gap-2 text-[13px] text-text-secondary">
                     <div className="h-1.5 w-1.5 rounded-full bg-border" />
                     {formatSolvedDate(rev.date)}
                   </div>
