@@ -1,5 +1,7 @@
 "use client";
 
+export const runtime = "edge";
+
 import { motion } from "framer-motion";
 import { ChevronLeft, Save, Trash2, CalendarClock, CheckCircle2, Target, Plus, Circle, GripVertical } from "lucide-react";
 import Link from "next/link";
