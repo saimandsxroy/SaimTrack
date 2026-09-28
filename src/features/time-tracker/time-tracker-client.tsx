@@ -108,7 +108,7 @@ export function TimeTrackerClient() {
   const [activeTimer, setActiveTimer] = useState<ActiveTimer | null>(null);
   const [timerTitle, setTimerTitle] = useState("Focused study session");
   const [timerCategory, setTimerCategory] = useState<TimeCategory>("DSA");
-  const [selectedPeriod, setSelectedPeriod] = useState<TimeTrackerPeriod>("lifetime");
+  const [selectedPeriod, setSelectedPeriod] = useState<TimeTrackerPeriod>("today");
   const [query, setQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<TimeCategory | "all">("all");
   const [now, setNow] = useState(Date.now());

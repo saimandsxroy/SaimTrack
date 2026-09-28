@@ -5,6 +5,7 @@ export const timeCategories = [
   "Client Work",
   "Interview Preparation",
   "College",
+  "Communication",
   "Other",
 ] as const;
 
