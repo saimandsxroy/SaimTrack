@@ -7,11 +7,13 @@ import { db } from "@/lib/firebase";
 export type TimeTrackerState = {
   entries: TimeEntry[];
   activeTimer: ActiveTimer | null;
+  customCategories?: string[];
 };
 
 export const defaultTimeTrackerState: TimeTrackerState = {
   entries: [],
   activeTimer: null,
+  customCategories: [],
 };
 
 export async function loadTimeTrackerState(userId: string): Promise<TimeTrackerState> {

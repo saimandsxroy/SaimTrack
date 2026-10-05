@@ -9,7 +9,7 @@ export const timeCategories = [
   "Other",
 ] as const;
 
-export type TimeCategory = (typeof timeCategories)[number];
+export type TimeCategory = string;
 
 export type TimeEntry = {
   id: string;

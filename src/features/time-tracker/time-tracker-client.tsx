@@ -74,7 +74,7 @@ type ManualEntryFormValues = {
 const manualEntrySchema = z
   .object({
     title: z.string().min(2, "Add a descriptive title."),
-    category: z.enum(timeCategories),
+    category: z.string().min(1, "Category is required."),
     date: z.string().min(1, "Pick a date."),
     startTime: z.string().min(1, "Start time is required."),
     endTime: z.string().min(1, "End time is required."),
@@ -108,6 +108,10 @@ export function TimeTrackerClient() {
   const [activeTimer, setActiveTimer] = useState<ActiveTimer | null>(null);
   const [timerTitle, setTimerTitle] = useState("Focused study session");
   const [timerCategory, setTimerCategory] = useState<TimeCategory>("DSA");
+  const [customCategories, setCustomCategories] = useState<string[]>([]);
+  const [isAddingCategory, setIsAddingCategory] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const allCategories = useMemo(() => [...timeCategories, ...customCategories], [customCategories]);
   const [selectedPeriod, setSelectedPeriod] = useState<TimeTrackerPeriod>("today");
   const [query, setQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<TimeCategory | "all">("all");
@@ -131,6 +135,7 @@ export function TimeTrackerClient() {
       const state = await loadTimeTrackerState(user.uid);
       setEntries(state.entries);
       setActiveTimer(state.activeTimer);
+      setCustomCategories(state.customCategories || []);
       if (state.activeTimer) {
         setTimerTitle(state.activeTimer.title);
         setTimerCategory(state.activeTimer.category);
@@ -182,10 +187,23 @@ export function TimeTrackerClient() {
   const monthlySeries = buildMonthlySeries(entries);
   const categorySeries = buildCategorySeries(entries);
 
-  function persist(nextEntries: TimeEntry[], nextTimer: ActiveTimer | null) {
+  function persist(nextEntries: TimeEntry[], nextTimer: ActiveTimer | null, nextCustomCategories = customCategories) {
     setEntries(nextEntries);
     setActiveTimer(nextTimer);
-    if (user) saveTimeTrackerState(user.uid, { entries: nextEntries, activeTimer: nextTimer });
+    setCustomCategories(nextCustomCategories);
+    if (user) saveTimeTrackerState(user.uid, { entries: nextEntries, activeTimer: nextTimer, customCategories: nextCustomCategories });
+  }
+
+  function handleAddCustomCategory(e: React.FormEvent) {
+    e.preventDefault();
+    const trimmed = newCategoryName.trim();
+    if (trimmed && !allCategories.includes(trimmed)) {
+      const nextCustomCategories = [...customCategories, trimmed];
+      persist(entries, activeTimer, nextCustomCategories);
+      setTimerCategory(trimmed);
+    }
+    setNewCategoryName("");
+    setIsAddingCategory(false);
   }
 
   function startTimer() {
@@ -424,8 +442,8 @@ export function TimeTrackerClient() {
               </div>
               <div className="flex flex-col gap-1.5">
                 <label className="text-[12px] font-medium text-text-tertiary">Category</label>
-                <div className="flex flex-wrap gap-2">
-                  {timeCategories.map(cat => (
+                <div className="flex flex-wrap gap-2 items-center">
+                  {allCategories.map(cat => (
                     <button
                       key={cat}
                       onClick={() => {
@@ -441,6 +459,28 @@ export function TimeTrackerClient() {
                       {cat}
                     </button>
                   ))}
+                  {isAddingCategory ? (
+                    <form onSubmit={handleAddCustomCategory} className="flex items-center">
+                      <input
+                        autoFocus
+                        type="text"
+                        value={newCategoryName}
+                        onChange={(e) => setNewCategoryName(e.target.value)}
+                        onBlur={() => {
+                           if (!newCategoryName.trim()) setIsAddingCategory(false);
+                        }}
+                        className="h-7 w-28 px-2 bg-background border border-accent rounded-md text-[12px] text-text-primary focus:outline-none focus:ring-1 focus:ring-accent"
+                        placeholder="New category"
+                      />
+                    </form>
+                  ) : (
+                    <button
+                      onClick={() => setIsAddingCategory(true)}
+                      className="h-7 px-2 rounded-md text-[12px] font-medium transition-colors bg-surface border border-border border-dashed text-text-secondary hover:text-text-primary flex items-center gap-1"
+                    >
+                      <Plus className="h-3 w-3" /> Add
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -511,7 +551,7 @@ export function TimeTrackerClient() {
                   <div className="space-y-2">
                     <label className="text-[12px] font-medium text-text-secondary">Category</label>
                     <select {...manualForm.register("category")} className="w-full h-9 bg-background border border-border rounded-md px-3 text-[13px] text-text-primary focus:outline focus:outline-2 focus:outline-accent outline-offset-0 transition-all">
-                      {timeCategories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                      {allCategories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
                     </select>
                   </div>
                   <div className="space-y-2">
