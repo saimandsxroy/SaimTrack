@@ -182,6 +182,12 @@ export function TimeTrackerClient() {
   const avgDuration = averageDuration(analyticsEntries);
   const dominantCategory = entryCount ? mostActiveCategory(analyticsEntries) : "Other";
 
+  // Session Log panel always shows ALL sessions sorted newest-first (not scoped to period)
+  const recentEntries = useMemo(() =>
+    [...entries].sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime()),
+    [entries]
+  );
+
   const dailySeries = buildDailySeries(entries);
   const weeklySeries = buildWeeklySeries(entries);
   const monthlySeries = buildMonthlySeries(entries);
@@ -580,14 +586,14 @@ export function TimeTrackerClient() {
             <section className="rounded-xl border border-border bg-surface p-6 shadow-card hover:border-border-hover transition-all duration-200">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-[14px] font-medium text-text-primary">Session Log</h2>
-                <span className="text-[11px] font-medium bg-surface-raised px-2 py-0.5 rounded border border-border">{visibleEntries.length} items</span>
+                <span className="text-[11px] font-medium bg-surface-raised px-2 py-0.5 rounded border border-border">{recentEntries.length} items</span>
               </div>
 
-              {/* Dense List View */}
+              {/* Dense List View — shows all sessions, not filtered by period */}
               <div className="flex flex-col">
                 <AnimatePresence initial={false}>
-                  {visibleEntries.length ? (
-                    visibleEntries.slice(0, 8).map((entry) => (
+                  {recentEntries.length ? (
+                    recentEntries.slice(0, 8).map((entry) => (
                       <motion.div
                         key={entry.id}
                         initial={{ opacity: 0, height: 0 }}
@@ -616,9 +622,9 @@ export function TimeTrackerClient() {
                     <div className="py-8 text-center text-[12px] text-text-tertiary">No sessions logged.</div>
                   )}
                 </AnimatePresence>
-                {visibleEntries.length > 8 && (
+                {recentEntries.length > 8 && (
                   <Link href="/time-tracker/sessions" className="pt-3 text-[12px] text-accent text-center hover:underline block">
-                    View all ({visibleEntries.length}) &rarr;
+                    View all ({recentEntries.length}) &rarr;
                   </Link>
                 )}
               </div>
