@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -50,6 +50,7 @@ import {
   toTimeInputValue,
 } from "@/features/time-tracker/time-tracker-utils";
 import {
+  checkpointTimerToLocalStorage,
   defaultTimeTrackerState,
   loadTimeTrackerState,
   saveTimeTrackerState,
@@ -145,12 +146,39 @@ export function TimeTrackerClient() {
     init();
   }, [user]);
 
+  // ─── Keep a ref to the latest state for pagehide/beforeunload ───
+  const stateRef = useRef({ entries, activeTimer, customCategories });
+  useEffect(() => {
+    stateRef.current = { entries, activeTimer, customCategories };
+  }, [entries, activeTimer, customCategories]);
+
+  // ─── Checkpoint to localStorage on page close (survives Windows shutdown) ───
+  useEffect(() => {
+    function checkpoint() {
+      checkpointTimerToLocalStorage(stateRef.current);
+    }
+    // pagehide fires reliably on mobile and desktop; beforeunload is a fallback
+    window.addEventListener("pagehide", checkpoint);
+    window.addEventListener("beforeunload", checkpoint);
+    return () => {
+      window.removeEventListener("pagehide", checkpoint);
+      window.removeEventListener("beforeunload", checkpoint);
+    };
+  }, []);
+
   useEffect(() => {
     if (!activeTimer || activeTimer.status !== "running") return;
     const interval = window.setInterval(() => {
       setNow(Date.now());
     }, 1000);
-    return () => window.clearInterval(interval);
+    // Also checkpoint to localStorage every 30s while timer is running
+    const checkpointInterval = window.setInterval(() => {
+      checkpointTimerToLocalStorage(stateRef.current);
+    }, 30_000);
+    return () => {
+      window.clearInterval(interval);
+      window.clearInterval(checkpointInterval);
+    };
   }, [activeTimer]);
 
   const liveDuration = activeTimer
