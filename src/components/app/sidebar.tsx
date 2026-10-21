@@ -154,6 +154,45 @@ export function Sidebar() {
 
 export function MobileSidebar() {
   const [open, setOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  const { user, signOutUser } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const name = user?.displayName || user?.email || "SaimTrack User";
+  const initial = name.charAt(0).toUpperCase();
+
+  async function handleSignOut() {
+    try {
+      await signOutUser();
+      setOpen(false);
+      toast.success("Signed out.");
+      router.replace("/auth/sign-in");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not sign out.");
+    }
+  }
+
+  async function handleChangePassword() {
+    if (!user || !user.email) {
+      toast.error("No user email found.");
+      return;
+    }
+    if (!auth) {
+      toast.error("Auth is not initialized.");
+      return;
+    }
+    try {
+      const { sendPasswordResetEmail } = await import("firebase/auth");
+      await sendPasswordResetEmail(auth, user.email);
+      toast.success("Password reset email sent! Check your inbox.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not send reset email.");
+    }
+  }
 
   return (
     <>
@@ -194,6 +233,37 @@ export function MobileSidebar() {
               <div className="flex-1 overflow-y-auto">
                 <NavList onNavigate={() => setOpen(false)} />
               </div>
+
+              {/* User Section */}
+              <div className="mt-auto pt-4 border-t border-border">
+                <div className="flex items-center gap-3">
+                  <div className="h-8 w-8 rounded-full bg-surface-raised border border-border flex items-center justify-center shrink-0">
+                    <span className="text-[12px] font-bold text-text-primary">{mounted ? initial : ""}</span>
+                  </div>
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-[13px] font-medium text-text-primary truncate">{mounted ? name : ""}</span>
+                    {user?.email && (
+                      <span className="text-[11px] text-text-tertiary truncate">{user.email}</span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-4 mt-3 ml-[44px]">
+                  <button
+                    onClick={handleChangePassword}
+                    className="text-[12px] font-medium text-text-secondary hover:text-text-primary transition-colors flex items-center gap-1.5"
+                    title="Change Password"
+                  >
+                    <KeyRound className="h-3.5 w-3.5" /> Password
+                  </button>
+                  <button
+                    onClick={handleSignOut}
+                    className="text-[12px] font-medium text-text-secondary hover:text-destructive transition-colors flex items-center gap-1.5"
+                    title="Log Out"
+                  >
+                    <LogOut className="h-3.5 w-3.5" /> Logout
+                  </button>
+                </div>
+              </div>
             </motion.aside>
           </>
         )}
@@ -201,6 +271,7 @@ export function MobileSidebar() {
     </>
   );
 }
+
 
 function Brand({ collapsed = false }: { collapsed?: boolean }) {
   return (
