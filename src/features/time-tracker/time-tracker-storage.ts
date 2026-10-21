@@ -16,10 +16,27 @@ export const defaultTimeTrackerState: TimeTrackerState = {
   customCategories: [],
 };
 
-// ─── localStorage backup helpers ───────────────────────────────────────
-// These act as an instant, offline-safe fallback so the active timer
-// survives abrupt shutdowns (e.g. Windows power-off, browser crash).
+// ─── Pause active timer helper ─────────────────────────────────────────
+// Freezes the accumulated elapsed time up to `atTimestamp` and sets status to "paused"
+export function pauseActiveTimer(state: TimeTrackerState, atTimestamp = Date.now()): TimeTrackerState {
+  if (!state.activeTimer || state.activeTimer.status !== "running") {
+    return state;
+  }
+  const runningSinceMs = new Date(state.activeTimer.runningSince).getTime();
+  const additionalElapsed = Math.max(0, atTimestamp - runningSinceMs);
+  const totalAccumulated = state.activeTimer.accumulatedMs + additionalElapsed;
 
+  return {
+    ...state,
+    activeTimer: {
+      ...state.activeTimer,
+      accumulatedMs: totalAccumulated,
+      status: "paused",
+    },
+  };
+}
+
+// ─── localStorage backup helpers ───────────────────────────────────────
 function saveToLocalStorage(state: TimeTrackerState) {
   try {
     if (typeof window === "undefined") return;
@@ -40,8 +57,7 @@ function loadFromLocalStorage(): TimeTrackerState | null {
   }
 }
 
-// ─── Primary load: Firestore first, localStorage fallback ──────────────
-
+// ─── Primary load: Firestore + localStorage with Auto-Pause on reopen ───
 export async function loadTimeTrackerState(userId: string): Promise<TimeTrackerState> {
   // 1. Try to load from localStorage immediately (instant, offline-safe)
   const localState = loadFromLocalStorage();
@@ -54,35 +70,47 @@ export async function loadTimeTrackerState(userId: string): Promise<TimeTrackerS
       if (snap.exists()) {
         const firestoreState = snap.data() as TimeTrackerState;
 
-        // If localStorage has a running/paused timer but Firestore doesn't,
-        // the timer was lost due to an abrupt shutdown — recover it.
-        if (
-          localState?.activeTimer &&
-          !firestoreState.activeTimer
-        ) {
+        // If localStorage has an activeTimer saved before shutdown/page-close:
+        // Use it because it captured the exact moment of shutdown as PAUSED.
+        if (localState?.activeTimer) {
+          const pausedTimer = localState.activeTimer.status === "running"
+            ? pauseActiveTimer(localState).activeTimer
+            : localState.activeTimer;
+
           const recovered: TimeTrackerState = {
             ...firestoreState,
-            activeTimer: localState.activeTimer,
+            activeTimer: pausedTimer,
             customCategories: firestoreState.customCategories ?? localState.customCategories ?? [],
           };
-          // Persist the recovered timer back to Firestore
           await setDoc(docRef, recovered, { merge: true });
           saveToLocalStorage(recovered);
           return recovered;
         }
 
-        // Normal case — sync localStorage with Firestore
+        // If Firestore had an activeTimer that was still marked "running" before shutdown,
+        // freeze it and pause it so it doesn't count hours while the PC was off.
+        if (firestoreState.activeTimer && firestoreState.activeTimer.status === "running") {
+          const pausedFirestoreState = pauseActiveTimer(firestoreState);
+          await setDoc(docRef, pausedFirestoreState, { merge: true });
+          saveToLocalStorage(pausedFirestoreState);
+          return pausedFirestoreState;
+        }
+
         saveToLocalStorage(firestoreState);
         return firestoreState;
       }
     } catch (error) {
       console.error("Failed to load time tracker from Firestore:", error);
-      // Firestore failed (offline / cold-start) — fall through to localStorage
     }
   }
 
-  // 3. Firestore unavailable — return localStorage if we have it
+  // 3. Firestore unavailable — return localStorage (paused if it was running)
   if (localState) {
+    if (localState.activeTimer && localState.activeTimer.status === "running") {
+      const paused = pauseActiveTimer(localState);
+      saveToLocalStorage(paused);
+      return paused;
+    }
     return localState;
   }
 
@@ -90,9 +118,7 @@ export async function loadTimeTrackerState(userId: string): Promise<TimeTrackerS
 }
 
 // ─── Primary save: Firestore + localStorage ────────────────────────────
-
 export async function saveTimeTrackerState(userId: string, state: TimeTrackerState) {
-  // Always write to localStorage first (synchronous, survives crashes)
   saveToLocalStorage(state);
 
   if (!db || !userId) return;
@@ -104,10 +130,9 @@ export async function saveTimeTrackerState(userId: string, state: TimeTrackerSta
   }
 }
 
-// ─── Emergency checkpoint (called from pagehide/beforeunload) ──────────
-// This writes ONLY to localStorage since Firestore setDoc is async and
-// won't complete before the browser kills the page.
-
+// ─── Emergency checkpoint (called on pagehide / beforeunload / interval) ─
+// Pauses the timer and writes to localStorage immediately so shutdown freezes the time
 export function checkpointTimerToLocalStorage(state: TimeTrackerState) {
-  saveToLocalStorage(state);
+  const pausedState = pauseActiveTimer(state);
+  saveToLocalStorage(pausedState);
 }

@@ -171,10 +171,10 @@ export function TimeTrackerClient() {
     const interval = window.setInterval(() => {
       setNow(Date.now());
     }, 1000);
-    // Also checkpoint to localStorage every 30s while timer is running
+    // Also checkpoint to localStorage every 10s while timer is running
     const checkpointInterval = window.setInterval(() => {
       checkpointTimerToLocalStorage(stateRef.current);
-    }, 30_000);
+    }, 10_000);
     return () => {
       window.clearInterval(interval);
       window.clearInterval(checkpointInterval);
