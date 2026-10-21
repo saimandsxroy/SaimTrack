@@ -152,10 +152,16 @@ export function TimeTrackerClient() {
     stateRef.current = { entries, activeTimer, customCategories };
   }, [entries, activeTimer, customCategories]);
 
+  const hydratedRef = useRef(false);
+  useEffect(() => {
+    hydratedRef.current = hydrated;
+  }, [hydrated]);
+
   // ─── Checkpoint to localStorage on page close (survives Windows shutdown) ───
   useEffect(() => {
     function checkpoint() {
-      checkpointTimerToLocalStorage(stateRef.current);
+      if (!user || !hydratedRef.current) return;
+      checkpointTimerToLocalStorage(user.uid, stateRef.current);
     }
     // pagehide fires reliably on mobile and desktop; beforeunload is a fallback
     window.addEventListener("pagehide", checkpoint);
@@ -164,7 +170,7 @@ export function TimeTrackerClient() {
       window.removeEventListener("pagehide", checkpoint);
       window.removeEventListener("beforeunload", checkpoint);
     };
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     if (!activeTimer || activeTimer.status !== "running") return;
@@ -173,13 +179,13 @@ export function TimeTrackerClient() {
     }, 1000);
     // Also checkpoint to localStorage every 10s while timer is running
     const checkpointInterval = window.setInterval(() => {
-      checkpointTimerToLocalStorage(stateRef.current);
+      if (user && hydratedRef.current) checkpointTimerToLocalStorage(user.uid, stateRef.current);
     }, 10_000);
     return () => {
       window.clearInterval(interval);
       window.clearInterval(checkpointInterval);
     };
-  }, [activeTimer]);
+  }, [activeTimer, user]);
 
   const liveDuration = activeTimer
     ? activeTimer.accumulatedMs +
