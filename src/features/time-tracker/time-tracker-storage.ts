@@ -63,30 +63,6 @@ function loadFromLocalStorage(userId: string): TimeTrackerState | null {
   }
 }
 
-// ─── Shutdown snapshot helpers ──────────────────────────────────────────
-// Written ONLY when this device's browser/tab closes (pagehide/beforeunload).
-// On next load of this SAME device, if we find a shutdown snapshot, we recover
-// the paused timer. We then clear it so future loads are treated normally.
-function saveShutdownSnapshot(userId: string, state: TimeTrackerState) {
-  try {
-    if (typeof window === "undefined") return;
-    const paused = pauseActiveTimer(state);
-    localStorage.setItem(shutdownKey(userId), JSON.stringify(paused));
-  } catch {
-    // non-critical
-  }
-}
-
-function loadShutdownSnapshot(userId: string): TimeTrackerState | null {
-  try {
-    if (typeof window === "undefined") return null;
-    const raw = localStorage.getItem(shutdownKey(userId));
-    if (!raw) return null;
-    return JSON.parse(raw) as TimeTrackerState;
-  } catch {
-    return null;
-  }
-}
 
 
 function clearShutdownSnapshot(userId: string) {
@@ -98,49 +74,21 @@ function clearShutdownSnapshot(userId: string) {
   }
 }
 
-
-
 // ─── Primary load ──────────────────────────────────────────────────────
 // Rule: Firestore is ALWAYS authoritative when reachable.
-// localStorage / shutdown snapshot is ONLY used when Firestore is unreachable.
-// This means cross-device use is always correct: mobile opens the running
-// Firestore timer unchanged; only the device that shut down recovers paused.
+// localStorage is used for offline fallback and fast local cache.
+// A running timer stays running across tab closes, browser reloads, and other devices.
 export async function loadTimeTrackerState(userId: string): Promise<TimeTrackerState> {
-  // 1. Check for a shutdown snapshot left by THIS device on its last close.
-  //    We'll use this only if Firestore is unreachable.
-  const shutdownSnapshot = loadShutdownSnapshot(userId);
+  // Clean up any legacy shutdown snapshot so it doesn't cause stray pauses
+  clearShutdownSnapshot(userId);
 
-  // 2. Firestore is the source of truth — always use it if reachable.
+  // 1. Firestore is the source of truth — always use it if reachable.
   if (db && userId) {
     try {
       const docRef = doc(db, "users", userId, "time-tracker", "state");
       const snap = await getDoc(docRef);
       if (snap.exists()) {
         const firestoreState = snap.data() as TimeTrackerState;
-
-        // If this device left a shutdown snapshot AND Firestore still has the
-        // timer as "running" (Firestore didn't get the paused update before
-        // the browser died), recover the paused snapshot and sync it back.
-        if (
-          shutdownSnapshot?.activeTimer &&
-          firestoreState.activeTimer?.id === shutdownSnapshot.activeTimer.id &&
-          firestoreState.activeTimer.status === "running" &&
-          shutdownSnapshot.activeTimer.status === "paused"
-        ) {
-          const recovered: TimeTrackerState = {
-            ...firestoreState,
-            activeTimer: shutdownSnapshot.activeTimer,
-            customCategories: firestoreState.customCategories ?? shutdownSnapshot.customCategories ?? [],
-          };
-          clearShutdownSnapshot(userId);
-          await setDoc(docRef, recovered, { merge: true });
-          saveToLocalStorage(userId, recovered);
-          return recovered;
-        }
-
-        // Normal case (cross-device, or no shutdown detected):
-        // Trust Firestore completely. Running stays running.
-        clearShutdownSnapshot(userId); // no longer needed
         saveToLocalStorage(userId, firestoreState);
         return firestoreState;
       }
@@ -150,13 +98,7 @@ export async function loadTimeTrackerState(userId: string): Promise<TimeTrackerS
     }
   }
 
-  // 3. Firestore unreachable — use shutdown snapshot first, then general localStorage.
-  if (shutdownSnapshot) {
-    clearShutdownSnapshot(userId);
-    saveToLocalStorage(userId, shutdownSnapshot);
-    return shutdownSnapshot;
-  }
-
+  // 2. Firestore unreachable — use local storage fallback.
   const localState = loadFromLocalStorage(userId);
   if (localState) {
     return localState;
@@ -179,12 +121,9 @@ export async function saveTimeTrackerState(userId: string, state: TimeTrackerSta
   }
 }
 
-// ─── Shutdown checkpoint ────────────────────────────────────────────────
-// Called ONLY from pagehide/beforeunload on THIS device.
-// Saves a paused snapshot to the shutdown key so the NEXT load on this
-// SAME device can detect and recover the paused timer.
-// Other devices are unaffected because they don't share localStorage.
+// ─── Tab close / reload checkpoint ──────────────────────────────────────
+// Keeps localStorage up-to-date with current state (running or paused)
+// so closing or reopening a tab does not lose or pause running timers.
 export function checkpointTimerToLocalStorage(userId: string, state: TimeTrackerState) {
-  saveShutdownSnapshot(userId, state);   // paused snapshot — for shutdown recovery
-  saveToLocalStorage(userId, state);     // running snapshot — for offline fallback
+  saveToLocalStorage(userId, state);
 }

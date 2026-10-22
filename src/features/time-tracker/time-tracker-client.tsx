@@ -53,6 +53,7 @@ import {
   checkpointTimerToLocalStorage,
   defaultTimeTrackerState,
   loadTimeTrackerState,
+  pauseActiveTimer,
   saveTimeTrackerState,
 } from "@/features/time-tracker/time-tracker-storage";
 import { useAuth } from "@/features/auth/auth-context";
@@ -174,16 +175,61 @@ export function TimeTrackerClient() {
 
   useEffect(() => {
     if (!activeTimer || activeTimer.status !== "running") return;
+
+    let lastTick = Date.now();
+
     const interval = window.setInterval(() => {
-      setNow(Date.now());
+      const currentNow = Date.now();
+      const elapsed = currentNow - lastTick;
+
+      // Computer sleep / suspend / shutdown drift detection:
+      // If time jumped by more than 2 minutes (120,000ms) between 1s ticks,
+      // the computer was suspended, hibernated, or shut down while the tab was open.
+      // In that case, pause the timer at the moment of shutdown/sleep (lastTick).
+      if (elapsed > 120_000) {
+        const pausedState = pauseActiveTimer(stateRef.current, lastTick);
+        setActiveTimer(pausedState.activeTimer);
+        setEntries(pausedState.entries);
+        if (user) {
+          saveTimeTrackerState(user.uid, pausedState);
+        }
+        return;
+      }
+
+      lastTick = currentNow;
+      setNow(currentNow);
     }, 1000);
-    // Also checkpoint to localStorage every 10s while timer is running
+
+    function handleVisibility() {
+      if (document.visibilityState === "visible") {
+        const currentNow = Date.now();
+        const elapsed = currentNow - lastTick;
+        if (elapsed > 120_000) {
+          const pausedState = pauseActiveTimer(stateRef.current, lastTick);
+          setActiveTimer(pausedState.activeTimer);
+          setEntries(pausedState.entries);
+          if (user) {
+            saveTimeTrackerState(user.uid, pausedState);
+          }
+          return;
+        }
+        setNow(currentNow);
+      }
+    }
+
+    document.addEventListener("visibilitychange", handleVisibility);
+    window.addEventListener("focus", handleVisibility);
+
+    // Also checkpoint to localStorage every 10s while timer is running (keeps running state fresh)
     const checkpointInterval = window.setInterval(() => {
       if (user && hydratedRef.current) checkpointTimerToLocalStorage(user.uid, stateRef.current);
     }, 10_000);
+
     return () => {
       window.clearInterval(interval);
       window.clearInterval(checkpointInterval);
+      document.removeEventListener("visibilitychange", handleVisibility);
+      window.removeEventListener("focus", handleVisibility);
     };
   }, [activeTimer, user]);
 
