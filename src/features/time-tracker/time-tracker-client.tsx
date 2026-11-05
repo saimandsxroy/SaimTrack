@@ -53,7 +53,6 @@ import {
   checkpointTimerToLocalStorage,
   defaultTimeTrackerState,
   loadTimeTrackerState,
-  pauseActiveTimer,
   saveTimeTrackerState,
 } from "@/features/time-tracker/time-tracker-storage";
 import { useAuth } from "@/features/auth/auth-context";
@@ -176,67 +175,91 @@ export function TimeTrackerClient() {
   useEffect(() => {
     if (!activeTimer || activeTimer.status !== "running") return;
 
-    let lastTick = Date.now();
+    // Use Web Worker ticker to avoid background tab setInterval clamping by Chrome
+    let worker: Worker | null = null;
+    let fallbackInterval: number | null = null;
 
-    const interval = window.setInterval(() => {
-      const currentNow = Date.now();
-      const elapsed = currentNow - lastTick;
+    try {
+      const workerBlob = new Blob(
+        [
+          `
+          let timerId = null;
+          self.onmessage = function(e) {
+            if (e.data === "start") {
+              if (timerId) clearInterval(timerId);
+              timerId = setInterval(() => self.postMessage("tick"), 1000);
+            } else if (e.data === "stop") {
+              if (timerId) clearInterval(timerId);
+              timerId = null;
+            }
+          };
+          self.postMessage("ready");
+          `,
+        ],
+        { type: "application/javascript" },
+      );
+      const workerUrl = URL.createObjectURL(workerBlob);
+      worker = new Worker(workerUrl);
 
-      // Computer sleep / suspend / shutdown drift detection:
-      // If time jumped by more than 2 minutes (120,000ms) between 1s ticks,
-      // the computer was suspended, hibernated, or shut down while the tab was open.
-      // In that case, pause the timer at the moment of shutdown/sleep (lastTick).
-      if (elapsed > 120_000) {
-        const pausedState = pauseActiveTimer(stateRef.current, lastTick);
-        setActiveTimer(pausedState.activeTimer);
-        setEntries(pausedState.entries);
-        if (user) {
-          saveTimeTrackerState(user.uid, pausedState);
+      worker.onmessage = (e) => {
+        if (e.data === "ready") {
+          worker?.postMessage("start");
+        } else if (e.data === "tick") {
+          setNow(Date.now());
         }
-        return;
-      }
-
-      lastTick = currentNow;
-      setNow(currentNow);
-    }, 1000);
+      };
+    } catch {
+      fallbackInterval = window.setInterval(() => {
+        setNow(Date.now());
+      }, 1000);
+    }
 
     function handleVisibility() {
-      if (document.visibilityState === "visible") {
-        const currentNow = Date.now();
-        const elapsed = currentNow - lastTick;
-        if (elapsed > 120_000) {
-          const pausedState = pauseActiveTimer(stateRef.current, lastTick);
-          setActiveTimer(pausedState.activeTimer);
-          setEntries(pausedState.entries);
-          if (user) {
-            saveTimeTrackerState(user.uid, pausedState);
-          }
-          return;
-        }
-        setNow(currentNow);
-      }
+      // Immediately resync clock whenever user switches back to the tab
+      setNow(Date.now());
     }
 
     document.addEventListener("visibilitychange", handleVisibility);
     window.addEventListener("focus", handleVisibility);
 
-    // Also checkpoint to localStorage every 10s while timer is running (keeps running state fresh)
+    // Checkpoint to localStorage every 10s while timer is running (keeps running state fresh)
     const checkpointInterval = window.setInterval(() => {
       if (user && hydratedRef.current) checkpointTimerToLocalStorage(user.uid, stateRef.current);
     }, 10_000);
 
     return () => {
-      window.clearInterval(interval);
+      if (worker) {
+        worker.postMessage("stop");
+        worker.terminate();
+      }
+      if (fallbackInterval) {
+        window.clearInterval(fallbackInterval);
+      }
       window.clearInterval(checkpointInterval);
       document.removeEventListener("visibilitychange", handleVisibility);
       window.removeEventListener("focus", handleVisibility);
     };
-  }, [activeTimer, user]);
+  }, [activeTimer?.status, user]);
 
   const liveDuration = activeTimer
     ? activeTimer.accumulatedMs +
       (activeTimer.status === "running" ? now - new Date(activeTimer.runningSince).getTime() : 0)
     : 0;
+
+  // Live document title so you can monitor the timer from other tabs (e.g. LeetCode)
+  useEffect(() => {
+    if (activeTimer && activeTimer.status === "running") {
+      document.title = `(${formatDuration(liveDuration)}) ${activeTimer.title} - SaimTrack`;
+    } else if (activeTimer && activeTimer.status === "paused") {
+      document.title = `[Paused] ${activeTimer.title} - SaimTrack`;
+    } else {
+      document.title = "Time Tracker - SaimTrack";
+    }
+
+    return () => {
+      document.title = "SaimTrack";
+    };
+  }, [activeTimer, liveDuration]);
 
   const visibleEntries = useMemo(() => {
     const scopedEntries = filterEntries(entries, selectedPeriod);
