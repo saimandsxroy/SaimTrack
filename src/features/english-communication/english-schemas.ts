@@ -139,29 +139,35 @@ export const communicationAssessmentSchema = z.object({
 export const englishStateDocSchema = z.object({
   dailyGoalMs: z.number().int().min(60_000),
   timezone: z.string().min(1),
-  goalHistory: z.array(
-    z.object({
-      effectiveDate: z.string(),
-      goalMs: z.number().int().min(60_000),
-    }),
-  ),
-  plannedRestDays: z.array(z.string()),
-  celebratedGoalDates: z.array(z.string()),
-  challengeRecords: z.array(
-    z.object({
-      dateKey: z.string(),
-      challengeId: z.string(),
-      status: z.enum(["completed", "skipped"]),
-      notes: z.string(),
-      updatedAt: z.string(),
-    }),
-  ),
-  unlockedAchievements: z.array(
-    z.object({
-      id: z.string(),
-      unlockedAt: z.string(),
-    }),
-  ),
+  goalHistory: z
+    .array(
+      z.object({
+        effectiveDate: z.string(),
+        goalMs: z.number().int().min(60_000),
+      }),
+    )
+    .default([]),
+  plannedRestDays: z.array(z.string()).default([]),
+  celebratedGoalDates: z.array(z.string()).default([]),
+  challengeRecords: z
+    .array(
+      z.object({
+        dateKey: z.string(),
+        challengeId: z.string(),
+        status: z.enum(["completed", "skipped"]),
+        notes: z.string(),
+        updatedAt: z.string(),
+      }),
+    )
+    .default([]),
+  unlockedAchievements: z
+    .array(
+      z.object({
+        id: z.string(),
+        unlockedAt: z.string(),
+      }),
+    )
+    .default([]),
   animationsEnabled: z.boolean().default(true),
   streakSummary: z
     .object({
@@ -180,22 +186,22 @@ export const englishStateDocSchema = z.object({
 });
 
 export const englishVocabularyDocSchema = z.object({
-  items: z.array(vocabularyItemSchema),
+  items: z.array(vocabularyItemSchema).default([]),
   updatedAt: z.string().optional(),
 });
 
 export const englishPhrasesDocSchema = z.object({
-  items: z.array(phraseItemSchema),
+  items: z.array(phraseItemSchema).default([]),
   updatedAt: z.string().optional(),
 });
 
 export const englishMistakesDocSchema = z.object({
-  items: z.array(grammarMistakeSchema),
+  items: z.array(grammarMistakeSchema).default([]),
   updatedAt: z.string().optional(),
 });
 
 export const englishPracticeJournalDocSchema = z.object({
-  journals: z.array(practiceJournalSchema),
-  assessments: z.array(communicationAssessmentSchema),
+  journals: z.array(practiceJournalSchema).default([]),
+  assessments: z.array(communicationAssessmentSchema).default([]),
   updatedAt: z.string().optional(),
 });

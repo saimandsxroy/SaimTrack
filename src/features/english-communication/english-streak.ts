@@ -5,6 +5,9 @@ import {
   type GoalHistoryEntry,
 } from "@/features/english-communication/english-types";
 import type { TimeEntry, TimerInterval } from "@/features/time-tracker/time-tracker-types";
+import { deduplicateEntries } from "@/lib/firestore-utils";
+
+export { deduplicateEntries };
 
 export type DailyEnglishSummary = {
   dateKey: string;
@@ -88,19 +91,7 @@ export function diffDateKeys(earlierKey: string, laterKey: string): number {
   return Math.round((t2 - t1) / 86_400_000);
 }
 
-/**
- * Deduplicate entries by stable session ID so duplicate writes/offline replays never inflate totals.
- */
-export function deduplicateEntries(entries: TimeEntry[]): TimeEntry[] {
-  const seen = new Set<string>();
-  const result: TimeEntry[] = [];
-  for (const entry of entries) {
-    if (!entry?.id || seen.has(entry.id)) continue;
-    seen.add(entry.id);
-    result.push(entry);
-  }
-  return result;
-}
+// Re-exported from @/lib/firestore-utils above to avoid cross-module cycles.
 
 export function isEnglishEntry(entry: TimeEntry): boolean {
   return entry.module === ENGLISH_MODULE_ID;

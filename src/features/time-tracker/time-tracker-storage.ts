@@ -1,8 +1,7 @@
 import { doc, getDoc, onSnapshot, runTransaction, setDoc, type Unsubscribe } from "firebase/firestore";
 import type { ActiveTimer, TimeEntry } from "@/features/time-tracker/time-tracker-types";
 import { db } from "@/lib/firebase";
-import { deduplicateEntries } from "@/features/english-communication/english-streak";
-import { measurePayloadBytes, stripUndefined } from "@/features/english-communication/english-storage";
+import { deduplicateEntries, measurePayloadBytes, stripUndefined } from "@/lib/firestore-utils";
 
 // Scoped by userId so different accounts on the same browser never collide.
 function storageKey(userId: string) {
@@ -32,7 +31,7 @@ export const defaultTimeTrackerState: TimeTrackerState = {
 
 export type PendingTimeTrackerOp =
   | { type: "claimTimer"; timer: ActiveTimer; createdAt: number }
-  | { type: "updateTimer"; timer: ActiveTimer | null; createdAt: number }
+  | { type: "updateTimer"; timer: ActiveTimer | null; expectedTimerId?: string; createdAt: number }
   | { type: "stopTimer"; entry: TimeEntry; createdAt: number }
   | { type: "upsertEntry"; entry: TimeEntry; createdAt: number }
   | { type: "deleteEntry"; entryId: string; createdAt: number }
@@ -182,7 +181,11 @@ async function archiveOldEntriesIfNeeded(userId: string, state: TimeTrackerState
     const snap = await getDoc(archiveRef);
     const existing = snap.exists() ? ((snap.data().entries as TimeEntry[]) ?? []) : [];
     const merged = deduplicateEntries([...yearEntries, ...existing]);
-    await setDoc(archiveRef, { year, entries: merged, updatedAt: new Date().toISOString() }, { merge: true });
+    await setDoc(
+      archiveRef,
+      stripUndefined({ year, entries: merged, updatedAt: new Date().toISOString() }),
+      { merge: true },
+    );
   }
 
   return { ...state, entries: recent };
@@ -351,7 +354,25 @@ export async function stopActiveTimerTx(userId: string, completedEntry: TimeEntr
 
   const archived = stripUndefined(await archiveOldEntriesIfNeeded(userId, nextState));
   if (archived.entries.length !== nextState.entries.length) {
-    await setDoc(docRef, archived, { merge: true });
+    const archivedIds = new Set(
+      nextState.entries
+        .filter((e) => !archived.entries.some((kept) => kept.id === e.id))
+        .map((e) => e.id),
+    );
+    const pruned = await runTransaction(db, async (tx) => {
+      const snap = await tx.get(docRef);
+      const current = snap.exists()
+        ? normalizeRemoteState(snap.data() as Partial<TimeTrackerState>)
+        : defaultTimeTrackerState;
+      const updated = stripUndefined({
+        ...current,
+        entries: current.entries.filter((e) => !archivedIds.has(e.id)),
+      });
+      tx.set(docRef, updated, { merge: true });
+      return updated;
+    });
+    saveToLocalStorage(userId, pruned);
+    return pruned;
   }
 
   saveToLocalStorage(userId, archived);
@@ -416,7 +437,8 @@ export async function reconcilePendingTimeTrackerOps(userId: string): Promise<{
           current = { ...current, activeTimer: op.timer };
         }
       } else if (op.type === "updateTimer") {
-        if (!current.activeTimer || !op.timer || current.activeTimer.id === op.timer.id) {
+        const targetId = op.timer?.id ?? op.expectedTimerId;
+        if (!current.activeTimer || (targetId && current.activeTimer.id === targetId)) {
           current = { ...current, activeTimer: op.timer };
         } else {
           hadConflict = true;

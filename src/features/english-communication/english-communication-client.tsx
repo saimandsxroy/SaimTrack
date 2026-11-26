@@ -17,7 +17,9 @@ import {
   defaultPracticeJournalDoc,
   defaultVocabularyDoc,
   getDocumentSizeStatus,
+  getPendingEnglishDocsCount,
   loadAllEnglishData,
+  reconcilePendingEnglishDocs,
   saveEnglishMistakes,
   saveEnglishPhrases,
   saveEnglishPracticeJournal,
@@ -77,18 +79,68 @@ export function EnglishCommunicationClient() {
 
   const [showCelebration, setShowCelebration] = useState(false);
   const [englishSyncError, setEnglishSyncError] = useState<string | null>(null);
+  const [pendingEnglishCount, setPendingEnglishCount] = useState(0);
   const [stateNeedsRemoteInit, setStateNeedsRemoteInit] = useState(false);
   const celebrationTriggeredRef = useRef<Set<string>>(new Set());
   const lastSyncedStreakHashRef = useRef<string | null>(null);
+  const settingsRef = useRef<EnglishCommunicationStateDoc>(settings);
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
+
+  const flushPendingEnglish = useCallback(async (uid: string) => {
+    const res = await reconcilePendingEnglishDocs(uid);
+    setPendingEnglishCount(getPendingEnglishDocsCount(uid));
+    if (res.errors.length > 0) {
+      setEnglishSyncError(res.errors[0]);
+      return res;
+    }
+    if (res.flushed.length > 0) {
+      setEnglishSyncError(null);
+      const refreshed = await loadAllEnglishData(uid);
+      setSettings(refreshed.state);
+      setVocabDoc(refreshed.vocabulary);
+      setPhrasesDoc(refreshed.phrases);
+      setMistakesDoc(refreshed.mistakes);
+      setJournalDoc(refreshed.practiceJournal);
+    }
+    return res;
+  }, []);
 
   useEffect(() => {
+    // Always clear previous user's in-memory state immediately on logout or account switch
+    // to prevent cross-account state or Firestore write leakage while async init loads.
+    setEnglishHydrated(false);
+    setSettings(createDefaultEnglishState());
+    setVocabDoc(defaultVocabularyDoc);
+    setPhrasesDoc(defaultPhrasesDoc);
+    setMistakesDoc(defaultMistakesDoc);
+    setJournalDoc(defaultPracticeJournalDoc);
+    setStateNeedsRemoteInit(false);
+    setEnglishSyncError(null);
+    setPendingEnglishCount(0);
+    setShowCelebration(false);
+    lastSyncedStreakHashRef.current = null;
+    celebrationTriggeredRef.current.clear();
+
     if (!user) return;
+    const uid = user.uid;
     let active = true;
+
     async function init() {
-      const data = await loadAllEnglishData(user!.uid);
+      if (typeof navigator === "undefined" || navigator.onLine) {
+        await reconcilePendingEnglishDocs(uid);
+      }
+      const data = await loadAllEnglishData(uid);
       if (!active) return;
       setSettings(data.state);
-      setStateNeedsRemoteInit(!data.stateExistsRemote);
+      settingsRef.current = data.state;
+      // Only treat remote state as uninitialized when Firestore genuinely confirmed absence (no load/parse error).
+      setStateNeedsRemoteInit(!data.stateExistsRemote && !data.stateLoadError);
+      if (data.stateLoadError) {
+        setEnglishSyncError("Could not read cloud settings; displaying local state.");
+      }
+      setPendingEnglishCount(getPendingEnglishDocsCount(uid));
       if (data.state.streakSummary) {
         const s = data.state.streakSummary;
         lastSyncedStreakHashRef.current = `${s.currentStreak}:${s.longestStreak}:${s.totalCompletedDays}:${s.totalActiveDays}:${s.todayKey}:${s.todayDurationMs}:${s.todayGoalMs}:${s.todayGoalCompleted}`;
@@ -100,10 +152,17 @@ export function EnglishCommunicationClient() {
       setEnglishHydrated(true);
     }
     void init();
+
+    const handleOnline = () => {
+      void flushPendingEnglish(uid);
+    };
+    window.addEventListener("online", handleOnline);
+
     return () => {
       active = false;
+      window.removeEventListener("online", handleOnline);
     };
-  }, [user]);
+  }, [user?.uid, flushPendingEnglish]);
 
   const metrics = useMemo(
     () => computeEnglishStreakMetrics(allTimeEntries, settings),
@@ -135,29 +194,23 @@ export function EnglishCommunicationClient() {
     ],
   );
 
-  useEffect(() => {
-    if (!user || !englishHydrated || !timerHydrated) return;
-    if (achievementEval.newlyUnlocked.length > 0) {
-      const nextSettings: EnglishCommunicationStateDoc = {
-        ...settings,
-        unlockedAchievements: achievementEval.mergedUnlocked,
-      };
-      setSettings(nextSettings);
-      void saveEnglishState(user.uid, nextSettings);
-      for (const unlocked of achievementEval.newlyUnlocked) {
-        const def = achievementEval.items.find((i) => i.id === unlocked.id);
-        if (def) {
-          toast.success(`Achievement Unlocked: ${def.title}!`);
-        }
-      }
-    }
-  }, [achievementEval.newlyUnlocked, user, englishHydrated, timerHydrated]);
-
   const persistSettings = useCallback(
-    async (next: EnglishCommunicationStateDoc) => {
+    async (
+      next: EnglishCommunicationStateDoc,
+      options?: { seedOnlyIfMissing?: boolean },
+    ) => {
+      settingsRef.current = next;
       setSettings(next);
       if (user) {
-        const res = await saveEnglishState(user.uid, next);
+        const res = await saveEnglishState(user.uid, next, options);
+        setPendingEnglishCount(getPendingEnglishDocsCount(user.uid));
+        if (res.adoptedRemoteState) {
+          settingsRef.current = res.adoptedRemoteState;
+          setSettings(res.adoptedRemoteState);
+          setStateNeedsRemoteInit(false);
+          setEnglishSyncError(null);
+          return;
+        }
         if (!res.savedRemote && res.error) {
           setEnglishSyncError(res.error);
           toast.error(`Cloud sync error: ${res.error}`);
@@ -170,6 +223,24 @@ export function EnglishCommunicationClient() {
     [user],
   );
 
+  // Sync newly unlocked achievements using persistSettings so errors & pending count are tracked uniformly
+  useEffect(() => {
+    if (!user || !englishHydrated || !timerHydrated) return;
+    if (achievementEval.newlyUnlocked.length > 0) {
+      const nextSettings: EnglishCommunicationStateDoc = {
+        ...settingsRef.current,
+        unlockedAchievements: achievementEval.mergedUnlocked,
+      };
+      void persistSettings(nextSettings);
+      for (const unlocked of achievementEval.newlyUnlocked) {
+        const def = achievementEval.items.find((i) => i.id === unlocked.id);
+        if (def) {
+          toast.success(`Achievement Unlocked: ${def.title}!`);
+        }
+      }
+    }
+  }, [achievementEval.newlyUnlocked, achievementEval.mergedUnlocked, achievementEval.items, user, englishHydrated, timerHydrated, persistSettings]);
+
   // Sync derived streakSummary & initial settings to Firestore whenever authoritative session totals or goal settings change
   useEffect(() => {
     if (!user || !englishHydrated || !timerHydrated) return;
@@ -177,9 +248,14 @@ export function EnglishCommunicationClient() {
     const hash = `${metrics.currentStreak}:${metrics.longestStreak}:${metrics.totalCompletedDays}:${metrics.totalActiveDays}:${metrics.todayKey}:${metrics.todayDurationMs}:${metrics.todayGoalMs}:${metrics.todayGoalCompleted}`;
     if (!stateNeedsRemoteInit && lastSyncedStreakHashRef.current === hash) return;
 
+    const wasInitialSeed = stateNeedsRemoteInit;
     lastSyncedStreakHashRef.current = hash;
+    if (wasInitialSeed) {
+      setStateNeedsRemoteInit(false);
+    }
+
     const nextWithSummary: EnglishCommunicationStateDoc = {
-      ...settings,
+      ...settingsRef.current,
       unlockedAchievements: achievementEval.mergedUnlocked,
       streakSummary: {
         currentStreak: metrics.currentStreak,
@@ -193,7 +269,7 @@ export function EnglishCommunicationClient() {
         lastCalculatedAt: new Date().toISOString(),
       },
     };
-    void persistSettings(nextWithSummary);
+    void persistSettings(nextWithSummary, { seedOnlyIfMissing: wasInitialSeed });
   }, [
     user,
     englishHydrated,
@@ -207,7 +283,6 @@ export function EnglishCommunicationClient() {
     metrics.todayDurationMs,
     metrics.todayGoalMs,
     metrics.todayGoalCompleted,
-    settings,
     achievementEval.mergedUnlocked,
     persistSettings,
   ]);
@@ -231,9 +306,10 @@ export function EnglishCommunicationClient() {
         const goalMins = Math.round(nextMetrics.todayGoalMs / 60_000);
         setShowCelebration(true);
         toast.success(`Daily English goal completed! ${goalMins} minutes of practice saved.`);
+        const latestSettings = settingsRef.current;
         void persistSettings({
-          ...settings,
-          celebratedGoalDates: Array.from(new Set([...settings.celebratedGoalDates, todayKey])),
+          ...latestSettings,
+          celebratedGoalDates: Array.from(new Set([...latestSettings.celebratedGoalDates, todayKey])),
         });
       }
     },
@@ -289,6 +365,7 @@ export function EnglishCommunicationClient() {
       setVocabDoc(next);
       if (user) {
         const res = await saveEnglishVocabulary(user.uid, next);
+        setPendingEnglishCount(getPendingEnglishDocsCount(user.uid));
         if (res.nearLimit) {
           toast.warning("Vocabulary document is approaching Firestore's 1 MiB limit.");
         }
@@ -309,6 +386,7 @@ export function EnglishCommunicationClient() {
       setPhrasesDoc(next);
       if (user) {
         const res = await saveEnglishPhrases(user.uid, next);
+        setPendingEnglishCount(getPendingEnglishDocsCount(user.uid));
         if (!res.savedRemote && res.error) {
           setEnglishSyncError(res.error);
           toast.error(`Phrases sync error: ${res.error}`);
@@ -326,6 +404,7 @@ export function EnglishCommunicationClient() {
       setMistakesDoc(next);
       if (user) {
         const res = await saveEnglishMistakes(user.uid, next);
+        setPendingEnglishCount(getPendingEnglishDocsCount(user.uid));
         if (!res.savedRemote && res.error) {
           setEnglishSyncError(res.error);
           toast.error(`Mistakes sync error: ${res.error}`);
@@ -343,6 +422,7 @@ export function EnglishCommunicationClient() {
       setJournalDoc(next);
       if (user) {
         const res = await saveEnglishPracticeJournal(user.uid, next);
+        setPendingEnglishCount(getPendingEnglishDocsCount(user.uid));
         if (!res.savedRemote && res.error) {
           setEnglishSyncError(res.error);
           toast.error(`Journal sync error: ${res.error}`);
@@ -353,6 +433,17 @@ export function EnglishCommunicationClient() {
     },
     [user],
   );
+
+  const handleRetryAllSync = useCallback(async () => {
+    await retrySync();
+    if (!user) return;
+    const res = await flushPendingEnglish(user.uid);
+    if (res.errors.length > 0) {
+      toast.error(`Cloud sync error: ${res.errors[0]}`);
+    } else if (res.flushed.length > 0) {
+      toast.success(`Synced ${res.flushed.length} pending English document(s).`);
+    }
+  }, [retrySync, user, flushPendingEnglish]);
 
   const docSizes = useMemo(
     () => [
@@ -416,29 +507,42 @@ export function EnglishCommunicationClient() {
         </div>
 
         <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => void retrySync()}
-            className={`h-8 px-3 rounded-md border bg-surface text-[12px] flex items-center gap-1.5 transition-colors ${
+          {(() => {
+            const totalPending = pendingCount + pendingEnglishCount;
+            const effectiveStatus =
               englishSyncError || syncStatus === "error"
-                ? "border-destructive/50 text-destructive"
-                : "border-border text-text-secondary hover:text-text-primary"
-            }`}
-            title={englishSyncError || "Cloud Firestore sync status"}
-          >
-            <RefreshCw className={`h-3 w-3 ${syncStatus === "syncing" ? "animate-spin text-accent" : ""}`} />
-            {englishSyncError
-              ? "Sync Error"
-              : syncStatus === "synced"
-                ? "Synced"
+                ? "error"
                 : syncStatus === "offline"
-                  ? `Offline${pendingCount > 0 ? ` (${pendingCount})` : ""}`
-                  : syncStatus === "pending"
-                    ? `Pending (${pendingCount})`
-                    : syncStatus === "syncing"
-                      ? "Syncing..."
-                      : "Sync Retry"}
-          </button>
+                  ? "offline"
+                  : totalPending > 0
+                    ? "pending"
+                    : syncStatus;
+            return (
+              <button
+                type="button"
+                onClick={() => void handleRetryAllSync()}
+                className={`h-8 px-3 rounded-md border bg-surface text-[12px] flex items-center gap-1.5 transition-colors ${
+                  effectiveStatus === "error"
+                    ? "border-destructive/50 text-destructive"
+                    : "border-border text-text-secondary hover:text-text-primary"
+                }`}
+                title={englishSyncError || "Cloud Firestore sync status"}
+              >
+                <RefreshCw className={`h-3 w-3 ${syncStatus === "syncing" ? "animate-spin text-accent" : ""}`} />
+                {effectiveStatus === "error"
+                  ? "Sync Error"
+                  : effectiveStatus === "synced"
+                    ? "Synced"
+                    : effectiveStatus === "offline"
+                      ? `Offline${totalPending > 0 ? ` (${totalPending})` : ""}`
+                      : effectiveStatus === "pending"
+                        ? `Pending (${totalPending})`
+                        : effectiveStatus === "syncing"
+                          ? "Syncing..."
+                          : "Sync Retry"}
+              </button>
+            );
+          })()}
         </div>
       </motion.div>
 

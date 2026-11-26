@@ -29,6 +29,7 @@ import {
 import { pauseActiveTimer } from "../features/time-tracker/time-tracker-storage";
 import type { TimeEntry } from "../features/time-tracker/time-tracker-types";
 import { sumDuration } from "../features/time-tracker/time-tracker-utils";
+import { stripUndefined } from "../lib/firestore-utils";
 
 const TZ = "Asia/Kolkata";
 
@@ -304,4 +305,85 @@ test("Spaced repetition, deterministic daily challenges, achievements, and Zod s
     [],
   );
   assert.equal(ach.newlyUnlocked.some((u) => u.id === "first-step"), true);
+});
+
+test("stripUndefined handles null, falsy primitives, arrays with undefined, Dates, and class instances", () => {
+  class MockTimestamp {
+    seconds: number;
+    nanoseconds: number;
+    constructor(s: number, ns: number) {
+      this.seconds = s;
+      this.nanoseconds = ns;
+    }
+    toDate() {
+      return new Date(this.seconds * 1000);
+    }
+  }
+
+  const d = new Date("2026-11-26T10:00:00Z");
+  const ts = new MockTimestamp(1795687200, 0);
+
+  const cleaned = stripUndefined({
+    keepNull: null,
+    keepZero: 0,
+    keepFalse: false,
+    keepEmpty: "",
+    dropTop: undefined,
+    nested: {
+      a: 1,
+      b: undefined,
+      c: { d: undefined, e: "ok" },
+    },
+    arr: [1, undefined, { x: 2, y: undefined }, undefined],
+    dateObj: d,
+    tsObj: ts,
+  });
+
+  assert.equal(cleaned.keepNull, null);
+  assert.equal(cleaned.keepZero, 0);
+  assert.equal(cleaned.keepFalse, false);
+  assert.equal(cleaned.keepEmpty, "");
+  assert.equal("dropTop" in cleaned, false);
+  assert.deepEqual(cleaned.nested, { a: 1, c: { e: "ok" } });
+  assert.deepEqual(cleaned.arr, [1, { x: 2 }]);
+  assert.equal(cleaned.dateObj instanceof Date, true);
+  assert.equal(cleaned.dateObj.toISOString(), d.toISOString());
+  assert.equal(cleaned.tsObj instanceof MockTimestamp, true);
+  assert.equal(typeof cleaned.tsObj.toDate, "function");
+});
+
+test("Backward compatibility: legacy TimeEntry and partial state docs parse cleanly and regular Communication entries never inflate English totals", () => {
+  const legacyTimeEntry: TimeEntry = {
+    id: "legacy-comm-1",
+    title: "Team standup",
+    category: "Communication",
+    startTime: "2026-11-26T09:00:00+05:30",
+    endTime: "2026-11-26T09:45:00+05:30",
+    duration: 45 * 60_000,
+    date: "2026-11-26T09:00:00+05:30",
+  };
+  assert.equal(timeEntrySchema.safeParse(legacyTimeEntry).success, true);
+
+  const engEntry = makeEnglishEntry("eng-compat-1", "2026-11-26", 15 * 60_000);
+  const combined = [legacyTimeEntry, engEntry];
+
+  // Global Time Tracker includes both (45m + 15m = 60m) without double counting
+  assert.equal(sumDuration(combined), 60 * 60_000);
+
+  // English module only counts entries tagged with module === "english-communication" (15m)
+  const partialStateParsed = englishStateDocSchema.safeParse({
+    dailyGoalMs: 1_800_000,
+    timezone: TZ,
+  });
+  assert.equal(partialStateParsed.success, true);
+  if (partialStateParsed.success) {
+    const m = computeEnglishStreakMetrics(
+      combined,
+      partialStateParsed.data,
+      new Date("2026-11-26T18:00:00+05:30"),
+    );
+    assert.equal(m.todayDurationMs, 15 * 60_000);
+    assert.equal(m.todayGoalCompleted, false);
+    assert.equal(m.totalSessionsCount, 1);
+  }
 });

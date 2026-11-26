@@ -169,6 +169,9 @@ export function TimeTrackerProvider({ children }: { children: ReactNode }) {
       setEntries([]);
       setActiveTimer(null);
       setCustomCategories([]);
+      setSyncStatus("synced");
+      setSyncMessage(null);
+      setPendingCount(0);
       setHydrated(false);
       return;
     }
@@ -593,13 +596,19 @@ export function TimeTrackerProvider({ children }: { children: ReactNode }) {
   }, [user, applyLocalState, refreshPendingCount]);
 
   const discardTimer = useCallback(async () => {
-    if (!user || !stateRef.current.activeTimer) return;
+    const currentTimer = stateRef.current.activeTimer;
+    if (!user || !currentTimer) return;
     const optimistic: TimeTrackerState = { ...stateRef.current, activeTimer: null };
     applyLocalState(optimistic);
     checkpointTimerToLocalStorage(user.uid, optimistic);
 
     if (typeof navigator !== "undefined" && !navigator.onLine) {
-      enqueuePendingTimeTrackerOp(user.uid, { type: "updateTimer", timer: null, createdAt: Date.now() });
+      enqueuePendingTimeTrackerOp(user.uid, {
+        type: "updateTimer",
+        timer: null,
+        expectedTimerId: currentTimer.id,
+        createdAt: Date.now(),
+      });
       refreshPendingCount(user.uid);
       setSyncStatus("offline");
       toast.message("Timer discarded.");
@@ -608,12 +617,20 @@ export function TimeTrackerProvider({ children }: { children: ReactNode }) {
 
     setSyncStatus("syncing");
     try {
-      await updateActiveTimerTx(user.uid, () => null);
+      await updateActiveTimerTx(user.uid, (remote) => {
+        if (!remote || remote.id === currentTimer.id) return null;
+        return remote;
+      });
       setSyncStatus("synced");
       toast.message("Timer discarded.");
     } catch (err) {
       if (isNetworkFailure(err)) {
-        enqueuePendingTimeTrackerOp(user.uid, { type: "updateTimer", timer: null, createdAt: Date.now() });
+        enqueuePendingTimeTrackerOp(user.uid, {
+          type: "updateTimer",
+          timer: null,
+          expectedTimerId: currentTimer.id,
+          createdAt: Date.now(),
+        });
         refreshPendingCount(user.uid);
         setSyncStatus("offline");
       } else {

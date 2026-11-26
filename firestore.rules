@@ -6,10 +6,17 @@ service cloud.firestore {
       return request.auth != null && request.auth.uid == userId;
     }
 
-    // Validated rules for shared Time Tracker state
+    // Validated rules for shared Time Tracker state & yearly archives
     match /users/{userId}/time-tracker/state {
       allow read: if isOwner(userId);
       allow write: if isOwner(userId)
+                   && request.resource.data.entries is list;
+    }
+
+    match /users/{userId}/time-tracker/{docId} {
+      allow read: if isOwner(userId);
+      allow write: if isOwner(userId)
+                   && docId.matches('^archive-[0-9]{4}$')
                    && request.resource.data.entries is list;
     }
 
@@ -35,9 +42,10 @@ service cloud.firestore {
                        || docId.matches('^(vocabulary|phrases|mistakes|practice-journal)-shard-[0-9]+$'));
     }
 
-    // Each authenticated user can read and write only their own data
-    match /users/{userId}/{document=**} {
-      allow read, write: if isOwner(userId);
+    // Existing SaimTrack collections (calendar, habit-tracker, learning-journal, goal-tracker, job-tracker, dsa-tracker, etc.)
+    match /users/{userId}/{collectionId}/{docId} {
+      allow read, write: if isOwner(userId)
+                         && !(collectionId in ['time-tracker', 'english-communication']);
     }
 
     // Explicitly block all other access (default is deny, but this is explicit)
