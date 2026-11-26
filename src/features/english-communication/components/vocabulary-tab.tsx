@@ -62,6 +62,7 @@ export function VocabularyTab({
   const [sortBy, setSortBy] = useState<VocabSort>("newest");
 
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [inlineAddOpen, setInlineAddOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [flashcardsOpen, setFlashcardsOpen] = useState(false);
 
@@ -158,10 +159,11 @@ export function VocabularyTab({
 
   function openAddDrawer() {
     resetForm();
-    setDrawerOpen(true);
+    setInlineAddOpen(true);
   }
 
   function openEditDrawer(item: VocabularyItem) {
+    setInlineAddOpen(false);
     setEditingId(item.id);
     setWord(item.word);
     setMeaning(item.meaning);
@@ -215,6 +217,7 @@ export function VocabularyTab({
 
     await onSave(nextList);
     setDrawerOpen(false);
+    setInlineAddOpen(false);
     resetForm();
     toast.success(editingId ? "Word updated." : "Word added to Vocabulary Vault.");
   }
@@ -299,13 +302,194 @@ export function VocabularyTab({
           </button>
           <button
             type="button"
-            onClick={openAddDrawer}
+            onClick={() => {
+              if (inlineAddOpen) {
+                setInlineAddOpen(false);
+              } else {
+                openAddDrawer();
+              }
+            }}
             className="h-9 px-4 rounded-md bg-accent text-background text-[12px] font-semibold hover:opacity-90 flex items-center gap-1.5"
           >
-            <Plus className="h-4 w-4" /> Add Word
+            <Plus className="h-4 w-4" /> {inlineAddOpen ? "Close Form" : "Add Word"}
           </button>
         </div>
       </div>
+
+      {/* Clean Inline Vocabulary Entry Form */}
+      {inlineAddOpen && (
+        <section className="rounded-xl border border-accent/30 bg-surface p-6 shadow-card">
+          <div className="flex items-center justify-between mb-5 pb-3 border-b border-border">
+            <div>
+              <h2 className="text-[15px] font-medium text-text-primary">Add New Vocabulary Word</h2>
+              <p className="text-[12px] text-text-secondary mt-0.5">
+                Build your personal spaced-repetition vault.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setInlineAddOpen(false)}
+              className="text-[12px] text-text-tertiary hover:text-text-primary"
+            >
+              Cancel
+            </button>
+          </div>
+
+          <form onSubmit={handleSaveWord} className="space-y-5">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+              <div className="space-y-1.5">
+                <label className="text-[12px] font-medium text-text-tertiary">Word *</label>
+                <input
+                  type="text"
+                  required
+                  value={word}
+                  onChange={(e) => setWord(e.target.value)}
+                  placeholder="e.g. articulate"
+                  className="w-full bg-transparent border-b border-border text-[17px] font-medium text-text-primary py-1.5 outline-none focus:border-accent transition-colors placeholder:text-text-tertiary"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[12px] font-medium text-text-secondary">Part of Speech</label>
+                <select
+                  value={partOfSpeech}
+                  onChange={(e) => setPartOfSpeech(e.target.value)}
+                  className="w-full h-9 bg-background border border-border rounded-md px-3 text-[13px] text-text-primary focus:outline-accent"
+                >
+                  {partsOfSpeech.map((pos) => (
+                    <option key={pos} value={pos}>
+                      {pos}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[12px] font-medium text-text-secondary">Pronunciation</label>
+                <input
+                  type="text"
+                  value={pronunciation}
+                  onChange={(e) => setPronunciation(e.target.value)}
+                  placeholder="aar-tik-yuh-lit"
+                  className="w-full h-9 bg-background border border-border rounded-md px-3 text-[13px] text-text-primary focus:outline-accent"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-[12px] font-medium text-text-secondary">English Meaning *</label>
+                <input
+                  type="text"
+                  required
+                  value={meaning}
+                  onChange={(e) => setMeaning(e.target.value)}
+                  placeholder="Clear, concise definition..."
+                  className="w-full h-9 bg-background border border-border rounded-md px-3 text-[13px] text-text-primary focus:outline-accent"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[12px] font-medium text-text-secondary">
+                  Hindi Meaning (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={hindiMeaning}
+                  onChange={(e) => setHindiMeaning(e.target.value)}
+                  placeholder="स्पष्ट रूप से बोलना"
+                  className="w-full h-9 bg-background border border-border rounded-md px-3 text-[13px] text-text-primary focus:outline-accent"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-[12px] font-medium text-text-secondary">Example Sentence</label>
+                <input
+                  type="text"
+                  value={exampleSentence}
+                  onChange={(e) => setExampleSentence(e.target.value)}
+                  placeholder="Standard sentence using the word..."
+                  className="w-full h-9 bg-background border border-border rounded-md px-3 text-[13px] text-text-primary focus:outline-accent"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[12px] font-medium text-text-secondary">Personal Example</label>
+                <input
+                  type="text"
+                  value={personalExample}
+                  onChange={(e) => setPersonalExample(e.target.value)}
+                  placeholder="Your own sentence from interview or work..."
+                  className="w-full h-9 bg-background border border-border rounded-md px-3 text-[13px] text-text-primary focus:outline-accent"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-[12px] font-medium text-text-secondary">Synonyms</label>
+                <input
+                  type="text"
+                  value={synonymsInput}
+                  onChange={(e) => setSynonymsInput(e.target.value)}
+                  placeholder="eloquent, clear"
+                  className="w-full h-9 bg-background border border-border rounded-md px-3 text-[13px] text-text-primary focus:outline-accent"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[12px] font-medium text-text-secondary">Antonyms</label>
+                <input
+                  type="text"
+                  value={antonymsInput}
+                  onChange={(e) => setAntonymsInput(e.target.value)}
+                  placeholder="vague, unclear"
+                  className="w-full h-9 bg-background border border-border rounded-md px-3 text-[13px] text-text-primary focus:outline-accent"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[12px] font-medium text-text-secondary">Tags</label>
+                <input
+                  type="text"
+                  value={tagsInput}
+                  onChange={(e) => setTagsInput(e.target.value)}
+                  placeholder="interview, tech"
+                  className="w-full h-9 bg-background border border-border rounded-md px-3 text-[13px] text-text-primary focus:outline-accent"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[12px] font-medium text-text-secondary">Mastery Level</label>
+                <select
+                  value={masteryLevel}
+                  onChange={(e) => setMasteryLevel(e.target.value as MasteryLevel)}
+                  className="w-full h-9 bg-background border border-border rounded-md px-3 text-[13px] text-text-primary focus:outline-accent"
+                >
+                  {masteryLevels.map((lvl) => (
+                    <option key={lvl} value={lvl}>
+                      {lvl}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-2 border-t border-border">
+              <label className="flex items-center gap-2 text-[13px] text-text-primary cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={favorite}
+                  onChange={(e) => setFavorite(e.target.checked)}
+                  className="h-4 w-4 accent-[#CBA365]"
+                />
+                Mark as favorite
+              </label>
+              <button
+                type="submit"
+                className="h-9 px-5 rounded-md bg-accent text-background text-[13px] font-semibold hover:opacity-90 transition-opacity"
+              >
+                Save Word
+              </button>
+            </div>
+          </form>
+        </section>
+      )}
 
       {/* Recently Added Strip */}
       {recentlyAdded.length > 0 && (

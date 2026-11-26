@@ -408,7 +408,7 @@ export function EnglishCommunicationClient() {
               settings={settings}
               allEntries={allTimeEntries}
               vocabulary={vocabDoc.items}
-              assessments={journalDoc.assessments}
+              achievements={achievementEval.items}
               onNavigateTab={handleNavigateTab}
               onToggleRestDay={handleToggleRestDay}
               onUpdateChallenge={handleUpdateChallenge}

@@ -31,11 +31,11 @@ function getIntensityLevel(durationMs: number): 0 | 1 | 2 | 3 | 4 {
 }
 
 const LEVEL_STYLES: Record<0 | 1 | 2 | 3 | 4, string> = {
-  0: "bg-[#1A1A1E] border border-white/[0.04]",
-  1: "bg-[#4A3820] border border-[#5D4628]",
-  2: "bg-[#856638] border border-[#9B7843]",
-  3: "bg-[#CBA365] border border-[#D8B57C]",
-  4: "bg-[#E6C68E] border border-[#F0D6A8]",
+  0: "bg-[#161B22] border border-white/[0.06]",
+  1: "bg-[#0e4429] border border-[#195f3a]",
+  2: "bg-[#006d32] border border-[#0c8541]",
+  3: "bg-[#26a641] border border-[#34bd51]",
+  4: "bg-[#39d353] border border-[#56e36e]",
 };
 
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -139,7 +139,7 @@ export function ContributionHeatmap({
 
         <div className="flex flex-wrap items-center gap-4 text-[12px]">
           <div className="flex items-center gap-1.5 text-text-secondary">
-            <Flame className="h-3.5 w-3.5 text-accent" />
+            <Flame className="h-3.5 w-3.5 text-[#39d353]" />
             <span>
               Streak: <strong className="text-text-primary">{metrics.currentStreak}d</strong>
             </span>
@@ -214,8 +214,8 @@ export function ContributionHeatmap({
                         aria-label={`${cell.dateKey}: ${Math.round((cell.summary?.durationMs ?? 0) / 60000)} minutes practiced`}
                         className={`h-[11px] w-[11px] rounded-[2px] transition-transform hover:scale-125 focus:scale-125 ${
                           LEVEL_STYLES[cell.level]
-                        } ${isToday ? "ring-1 ring-accent ring-offset-1 ring-offset-surface" : ""} ${
-                          isRest && cell.level === 0 ? "border-dashed border-accent/50" : ""
+                        } ${isToday ? "ring-1 ring-[#39d353] ring-offset-1 ring-offset-surface" : ""} ${
+                          isRest && cell.level === 0 ? "border-dashed border-[#39d353]/50" : ""
                         }`}
                       />
                     );
@@ -260,13 +260,13 @@ export function ContributionHeatmap({
         </div>
 
         <div className="flex items-center gap-1.5 text-text-tertiary shrink-0">
-          <span>0m</span>
+          <span>Less</span>
           <span className={`h-[11px] w-[11px] rounded-[2px] ${LEVEL_STYLES[0]}`} title="0 minutes" />
           <span className={`h-[11px] w-[11px] rounded-[2px] ${LEVEL_STYLES[1]}`} title="< 15 minutes" />
           <span className={`h-[11px] w-[11px] rounded-[2px] ${LEVEL_STYLES[2]}`} title="15–29 minutes" />
           <span className={`h-[11px] w-[11px] rounded-[2px] ${LEVEL_STYLES[3]}`} title="30–59 minutes" />
           <span className={`h-[11px] w-[11px] rounded-[2px] ${LEVEL_STYLES[4]}`} title="60+ minutes" />
-          <span>60m+</span>
+          <span>More</span>
         </div>
       </div>
 

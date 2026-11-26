@@ -181,6 +181,19 @@ test("Midnight-crossing session allocates duration accurately across calendar da
   const alloc = allocateEntryAcrossDays(crossing, TZ);
   assert.equal(alloc.get("2026-12-31"), 15 * 60_000);
   assert.equal(alloc.get("2027-01-01"), 30 * 60_000);
+
+  // Exact millisecond conservation even when interval sum differs slightly from entry.duration
+  const entryWithDrift = makeEnglishEntry("exact-ms", "2026-11-26", 116_432, {
+    intervals: [
+      {
+        start: "2026-11-26T10:00:00.000Z",
+        end: "2026-11-26T10:01:56.000Z", // 116_000ms (432ms less than duration)
+      },
+    ],
+  });
+  const exactAlloc = allocateEntryAcrossDays(entryWithDrift, TZ);
+  const sumAllocated = Array.from(exactAlloc.values()).reduce((a, b) => a + b, 0);
+  assert.equal(sumAllocated, 116_432);
 });
 
 test("Streak handles month/year boundaries, incomplete today, planned rest days, and effective goal history", () => {

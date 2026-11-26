@@ -203,12 +203,15 @@ export function allocateEntryAcrossDays(
 
     const rawSum = rawSegments.reduce((acc, seg) => acc + seg.ms, 0);
     if (rawSum > 0) {
-      // Scale slightly only if entry.duration was manually edited or rounded
-      const ratio = Math.abs(rawSum - totalDuration) > 2000 ? totalDuration / rawSum : 1;
-      for (const seg of rawSegments) {
-        const scaled = Math.round(seg.ms * ratio);
-        allocation.set(seg.dateKey, (allocation.get(seg.dateKey) ?? 0) + scaled);
-      }
+      let distributed = 0;
+      rawSegments.forEach((seg, idx) => {
+        const isLast = idx === rawSegments.length - 1;
+        const part = isLast
+          ? Math.max(0, totalDuration - distributed)
+          : Math.round((seg.ms / rawSum) * totalDuration);
+        distributed += part;
+        allocation.set(seg.dateKey, (allocation.get(seg.dateKey) ?? 0) + part);
+      });
       return allocation;
     }
   }

@@ -18,11 +18,8 @@ import {
 } from "@/features/english-communication/english-types";
 import type { TimeEntry, TimeTrackerPeriod } from "@/features/time-tracker/time-tracker-types";
 import {
-  averageDuration,
   formatDuration,
-  isWithinPeriod,
   periodLabel,
-  sumDuration,
 } from "@/features/time-tracker/time-tracker-utils";
 
 const ChartCard = dynamic(
@@ -58,13 +55,65 @@ export function AnalyticsTab({
 
   const englishEntries = useMemo(() => getEnglishEntries(allEntries), [allEntries]);
 
-  const scopedEntries = useMemo(
-    () => englishEntries.filter((e) => isWithinPeriod(e.date, period)),
-    [englishEntries, period],
-  );
+  const { scopedEntries, totalDuration, avgDuration, categoryTotalsMap } = useMemo(() => {
+    const todayKey = metrics.todayKey;
+    const [ty, tm, td] = todayKey.split("-").map(Number);
+    const weekday = new Date(Date.UTC(ty, tm - 1, td, 12, 0, 0)).getUTCDay() || 7;
+    const weekStartKey = addDaysToDateKey(todayKey, -(weekday - 1));
+    const monthStartKey = `${todayKey.slice(0, 7)}-01`;
+    const yearStartKey = `${todayKey.slice(0, 4)}-01-01`;
 
-  const totalDuration = useMemo(() => sumDuration(scopedEntries), [scopedEntries]);
-  const avgDuration = useMemo(() => averageDuration(scopedEntries), [scopedEntries]);
+    if (period === "lifetime") {
+      const catMap = new Map<string, number>();
+      for (const e of englishEntries) {
+        const cat = e.subcategory || e.category || "Communication";
+        catMap.set(cat, (catMap.get(cat) ?? 0) + e.duration);
+      }
+      const total = metrics.lifetimeDurationMs;
+      const avg = englishEntries.length ? total / englishEntries.length : 0;
+      return {
+        scopedEntries: englishEntries,
+        totalDuration: total,
+        avgDuration: avg,
+        categoryTotalsMap: catMap,
+      };
+    }
+
+    const startKey =
+      period === "today"
+        ? todayKey
+        : period === "week"
+          ? weekStartKey
+          : period === "month"
+            ? monthStartKey
+            : yearStartKey;
+
+    let total = 0;
+    const seenIds = new Set<string>();
+    const list: TimeEntry[] = [];
+    const catMap = new Map<string, number>();
+
+    for (const [key, summary] of metrics.dailyMap.entries()) {
+      if (key >= startKey && key <= todayKey) {
+        total += summary.durationMs;
+        for (const s of summary.sessions) {
+          if (!seenIds.has(s.id)) {
+            seenIds.add(s.id);
+            list.push(s);
+            const cat = s.subcategory || s.category || "Communication";
+            catMap.set(cat, (catMap.get(cat) ?? 0) + s.duration);
+          }
+        }
+      }
+    }
+
+    return {
+      scopedEntries: list,
+      totalDuration: total,
+      avgDuration: list.length ? total / list.length : 0,
+      categoryTotalsMap: catMap,
+    };
+  }, [englishEntries, period, metrics]);
 
   const dailySeries = useMemo(() => {
     return Array.from({ length: 7 }, (_, i) => {
@@ -117,16 +166,11 @@ export function AnalyticsTab({
   }, [metrics.todayKey, metrics.dailyMap]);
 
   const categoryDistribution = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const entry of scopedEntries) {
-      const cat = entry.subcategory || entry.category || "Communication";
-      map.set(cat, (map.get(cat) ?? 0) + entry.duration);
-    }
-    return Array.from(map.entries()).map(([name, ms]) => ({
+    return Array.from(categoryTotalsMap.entries()).map(([name, ms]) => ({
       name,
       value: Number((ms / 3_600_000).toFixed(2)),
     }));
-  }, [scopedEntries]);
+  }, [categoryTotalsMap]);
 
   const vocabGrowthSeries = useMemo(() => {
     const [curYear, curMonth] = metrics.todayKey.split("-").map(Number);

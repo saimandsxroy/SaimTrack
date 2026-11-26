@@ -397,28 +397,28 @@ export function PracticeTab({
     <div className="flex flex-col gap-8">
       {timerHero}
 
-      <div className="grid grid-cols-1 xl:grid-cols-[0.9fr_1.1fr] gap-8">
+      <div className="grid grid-cols-1 xl:grid-cols-[0.85fr_1.15fr] gap-8">
         {/* Manual Session Entry */}
-        <section className="rounded-xl border border-border bg-surface p-6 shadow-card">
-          <div className="flex items-center justify-between mb-5">
+        <section className="rounded-xl border border-border bg-surface p-6 shadow-card hover:border-border-hover transition-all duration-200">
+          <div className="flex items-center justify-between mb-6 pb-4 border-b border-border">
             <div>
-              <h2 className="text-[15px] font-medium text-text-primary">Manual English Session</h2>
+              <h2 className="text-[15px] font-medium text-text-primary">Manual English Entry</h2>
               <p className="text-[12px] text-text-secondary mt-0.5">
-                Log offline conversations, classes, or reading sessions.
+                Syncs directly into Time Tracker &amp; daily streak totals.
               </p>
             </div>
           </div>
 
           <form
-            className="space-y-4"
+            className="space-y-5"
             onSubmit={manualForm.handleSubmit((vals) => startTransition(() => void handleManualSubmit(vals)))}
           >
             <div className="space-y-1.5">
-              <label className="text-[12px] font-medium text-text-secondary">Session Objective</label>
+              <label className="text-[12px] font-medium text-text-tertiary">Session Objective</label>
               <input
                 type="text"
                 {...manualForm.register("title")}
-                className="w-full h-9 bg-background border border-border rounded-md px-3 text-[13px] text-text-primary focus:outline-accent placeholder:text-text-tertiary"
+                className="w-full bg-transparent border-b border-border text-[17px] font-medium text-text-primary py-2 outline-none focus:border-accent transition-colors placeholder:text-text-tertiary"
                 placeholder="E.g. 1-on-1 mentor speaking session"
               />
               {manualForm.formState.errors.title && (
@@ -431,7 +431,7 @@ export function PracticeTab({
                 <label className="text-[12px] font-medium text-text-secondary">Practice Category</label>
                 <select
                   {...manualForm.register("subcategory")}
-                  className="w-full h-9 bg-background border border-border rounded-md px-3 text-[13px] text-text-primary focus:outline-accent"
+                  className="w-full h-9 bg-background border border-border rounded-md px-3 text-[13px] text-text-primary focus:outline-accent transition-colors"
                 >
                   {englishPracticeCategories.map((cat) => (
                     <option key={cat} value={cat}>
@@ -445,7 +445,7 @@ export function PracticeTab({
                 <input
                   type="date"
                   {...manualForm.register("date")}
-                  className="w-full h-9 bg-background border border-border rounded-md px-3 text-[13px] text-text-primary focus:outline-accent"
+                  className="w-full h-9 bg-background border border-border rounded-md px-3 text-[13px] text-text-primary focus:outline-accent transition-colors"
                 />
               </div>
             </div>
@@ -456,7 +456,7 @@ export function PracticeTab({
                 <input
                   type="time"
                   {...manualForm.register("startTime")}
-                  className="w-full h-9 bg-background border border-border rounded-md px-3 text-[13px] text-text-primary focus:outline-accent"
+                  className="w-full h-9 bg-background border border-border rounded-md px-3 text-[13px] text-text-primary focus:outline-accent transition-colors"
                 />
               </div>
               <div className="space-y-1.5">
@@ -464,7 +464,7 @@ export function PracticeTab({
                 <input
                   type="time"
                   {...manualForm.register("endTime")}
-                  className="w-full h-9 bg-background border border-border rounded-md px-3 text-[13px] text-text-primary focus:outline-accent"
+                  className="w-full h-9 bg-background border border-border rounded-md px-3 text-[13px] text-text-primary focus:outline-accent transition-colors"
                 />
                 {manualForm.formState.errors.endTime && (
                   <p className="text-[11px] text-destructive">
@@ -479,17 +479,17 @@ export function PracticeTab({
               <textarea
                 {...manualForm.register("notes")}
                 rows={2}
-                className="w-full bg-background border border-border rounded-md px-3 py-2 text-[13px] text-text-primary focus:outline-accent placeholder:text-text-tertiary resize-none"
-                placeholder="What did you practice or notice?"
+                className="w-full bg-background border border-border rounded-md px-3 py-2 text-[13px] text-text-primary focus:outline-accent placeholder:text-text-tertiary resize-none transition-colors"
+                placeholder="Key expressions, difficulties, or feedback..."
               />
             </div>
 
             <button
               type="submit"
               disabled={isPending}
-              className="w-full h-9 bg-accent text-background rounded-md text-[13px] font-semibold hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
+              className="w-full h-9 bg-surface-raised border border-border rounded-md text-[13px] font-medium text-text-primary hover:border-accent/60 hover:text-accent transition-colors flex items-center justify-center gap-2"
             >
-              <Plus className="h-4 w-4" /> Log English Session
+              <Plus className="h-4 w-4 text-accent" /> Log English Session
             </button>
           </form>
         </section>
