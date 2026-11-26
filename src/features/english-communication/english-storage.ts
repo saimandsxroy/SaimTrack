@@ -21,6 +21,26 @@ export const FIRESTORE_MAX_BYTES = 1_048_576; // 1 MiB
 export const FIRESTORE_WARN_BYTES = 750_000; // ~71% threshold
 export const FIRESTORE_BLOCK_BYTES = 960_000; // Hard safety guard before 1 MiB limit
 
+/**
+ * Recursively removes keys with `undefined` values so Firestore setDoc/runTransaction never
+ * fails with "Unsupported field value: undefined".
+ */
+export function stripUndefined<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map((item) => stripUndefined(item)) as unknown as T;
+  }
+  if (value !== null && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (v !== undefined) {
+        out[k] = stripUndefined(v);
+      }
+    }
+    return out as T;
+  }
+  return value;
+}
+
 export function measurePayloadBytes(payload: unknown): number {
   const serialized = JSON.stringify(payload);
   if (typeof TextEncoder !== "undefined") {
@@ -103,7 +123,7 @@ async function loadEnglishDoc<T>(
   docId: EnglishDocId,
   fallback: T,
   validate: (data: unknown) => T | null,
-): Promise<T> {
+): Promise<{ data: T; existsRemote: boolean }> {
   if (db && userId) {
     try {
       const ref = doc(db, "users", userId, "english-communication", docId);
@@ -112,7 +132,7 @@ async function loadEnglishDoc<T>(
         const parsed = validate(snap.data());
         if (parsed) {
           saveLocal(userId, docId, parsed);
-          return parsed;
+          return { data: parsed, existsRemote: true };
         }
       }
     } catch (error) {
@@ -123,9 +143,9 @@ async function loadEnglishDoc<T>(
   const cached = loadLocal<T>(userId, docId);
   if (cached) {
     const parsed = validate(cached);
-    if (parsed) return parsed;
+    if (parsed) return { data: parsed, existsRemote: false };
   }
-  return fallback;
+  return { data: fallback, existsRemote: false };
 }
 
 async function saveEnglishDoc<T extends Record<string, unknown>>(
@@ -133,24 +153,25 @@ async function saveEnglishDoc<T extends Record<string, unknown>>(
   docId: EnglishDocId,
   payload: T,
   validate: (data: unknown) => T | null,
-): Promise<{ savedRemote: boolean; nearLimit: boolean; bytes: number }> {
-  const stamped = { ...payload, updatedAt: new Date().toISOString() };
+): Promise<{ savedRemote: boolean; nearLimit: boolean; bytes: number; error?: string }> {
+  const stamped = stripUndefined({ ...payload, updatedAt: new Date().toISOString() });
   const validated = validate(stamped);
   if (!validated) {
     throw new Error(`Invalid payload for english-communication/${docId}`);
   }
+  const cleanPayload = stripUndefined(validated);
 
-  const size = getDocumentSizeStatus(docId, validated);
+  const size = getDocumentSizeStatus(docId, cleanPayload);
   if (size.overLimit) {
     throw new Error(
       `Document "${docId}" has reached ${size.percentOfLimit}% of Firestore's 1 MiB limit. Archive older entries before adding more.`,
     );
   }
 
-  saveLocal(userId, docId, validated);
+  saveLocal(userId, docId, cleanPayload);
 
   if (!db || !userId) {
-    return { savedRemote: false, nearLimit: size.nearLimit, bytes: size.bytes };
+    return { savedRemote: false, nearLimit: size.nearLimit, bytes: size.bytes, error: "Firestore not initialized." };
   }
 
   if (typeof navigator !== "undefined" && !navigator.onLine) {
@@ -159,16 +180,22 @@ async function saveEnglishDoc<T extends Record<string, unknown>>(
 
   try {
     const ref = doc(db, "users", userId, "english-communication", docId);
-    await setDoc(ref, validated, { merge: true });
+    await setDoc(ref, cleanPayload, { merge: true });
     return { savedRemote: true, nearLimit: size.nearLimit, bytes: size.bytes };
   } catch (error) {
     console.error(`Failed to save english-communication/${docId}:`, error);
-    return { savedRemote: false, nearLimit: size.nearLimit, bytes: size.bytes };
+    return {
+      savedRemote: false,
+      nearLimit: size.nearLimit,
+      bytes: size.bytes,
+      error: error instanceof Error ? error.message : "Firestore write failed.",
+    };
   }
 }
 
 export async function loadAllEnglishData(userId: string): Promise<{
   state: EnglishCommunicationStateDoc;
+  stateExistsRemote: boolean;
   vocabulary: EnglishVocabularyDoc;
   phrases: EnglishPhrasesDoc;
   mistakes: EnglishMistakesDoc;
@@ -176,7 +203,7 @@ export async function loadAllEnglishData(userId: string): Promise<{
 }> {
   const defaultState = createDefaultEnglishState();
 
-  const [state, vocabulary, phrases, mistakes, practiceJournal] = await Promise.all([
+  const [stateRes, vocabularyRes, phrasesRes, mistakesRes, practiceJournalRes] = await Promise.all([
     loadEnglishDoc(userId, "state", defaultState, (d) => {
       const res = englishStateDocSchema.safeParse(d);
       return res.success ? res.data : null;
@@ -199,19 +226,27 @@ export async function loadAllEnglishData(userId: string): Promise<{
     }),
   ]);
 
-  return { state, vocabulary, phrases, mistakes, practiceJournal };
+  return {
+    state: stateRes.data,
+    stateExistsRemote: stateRes.existsRemote,
+    vocabulary: vocabularyRes.data,
+    phrases: phrasesRes.data,
+    mistakes: mistakesRes.data,
+    practiceJournal: practiceJournalRes.data,
+  };
 }
 
 export async function saveEnglishState(userId: string, state: EnglishCommunicationStateDoc) {
   // Use Firestore transaction when online to safely merge celebratedGoalDates & unlockedAchievements
-  const stamped = { ...state, updatedAt: new Date().toISOString() };
+  const stamped = stripUndefined({ ...state, updatedAt: new Date().toISOString() });
   const parsed = englishStateDocSchema.safeParse(stamped);
   if (!parsed.success) {
     throw new Error("Invalid English Communication state payload.");
   }
+  const cleanData = stripUndefined(parsed.data);
 
-  saveLocal(userId, "state", parsed.data);
-  const size = getDocumentSizeStatus("state", parsed.data);
+  saveLocal(userId, "state", cleanData);
+  const size = getDocumentSizeStatus("state", cleanData);
 
   if (!db || !userId || (typeof navigator !== "undefined" && !navigator.onLine)) {
     return { savedRemote: false, nearLimit: size.nearLimit, bytes: size.bytes };
@@ -222,31 +257,36 @@ export async function saveEnglishState(userId: string, state: EnglishCommunicati
     await runTransaction(db, async (tx) => {
       const snap = await tx.get(ref);
       if (!snap.exists()) {
-        tx.set(ref, parsed.data);
+        tx.set(ref, cleanData);
         return;
       }
       const remote = snap.data() as Partial<EnglishCommunicationStateDoc>;
       const mergedCelebrated = Array.from(
-        new Set([...(remote.celebratedGoalDates ?? []), ...parsed.data.celebratedGoalDates]),
+        new Set([...(remote.celebratedGoalDates ?? []), ...cleanData.celebratedGoalDates]),
       );
       const achievementMap = new Map<string, { id: string; unlockedAt: string }>();
-      for (const a of [...(remote.unlockedAchievements ?? []), ...parsed.data.unlockedAchievements]) {
+      for (const a of [...(remote.unlockedAchievements ?? []), ...cleanData.unlockedAchievements]) {
         if (!achievementMap.has(a.id)) achievementMap.set(a.id, a);
       }
       tx.set(
         ref,
-        {
-          ...parsed.data,
+        stripUndefined({
+          ...cleanData,
           celebratedGoalDates: mergedCelebrated,
           unlockedAchievements: Array.from(achievementMap.values()),
-        },
+        }),
         { merge: true },
       );
     });
     return { savedRemote: true, nearLimit: size.nearLimit, bytes: size.bytes };
   } catch (error) {
     console.error("Failed to save english-communication/state transactionally:", error);
-    return { savedRemote: false, nearLimit: size.nearLimit, bytes: size.bytes };
+    return {
+      savedRemote: false,
+      nearLimit: size.nearLimit,
+      bytes: size.bytes,
+      error: error instanceof Error ? error.message : "Firestore write failed.",
+    };
   }
 }
 

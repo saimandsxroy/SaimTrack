@@ -163,6 +163,19 @@ export const englishStateDocSchema = z.object({
     }),
   ),
   animationsEnabled: z.boolean().default(true),
+  streakSummary: z
+    .object({
+      currentStreak: z.number().int().nonnegative(),
+      longestStreak: z.number().int().nonnegative(),
+      totalCompletedDays: z.number().int().nonnegative(),
+      totalActiveDays: z.number().int().nonnegative(),
+      todayKey: z.string(),
+      todayDurationMs: z.number().nonnegative(),
+      todayGoalMs: z.number().nonnegative(),
+      todayGoalCompleted: z.boolean(),
+      lastCalculatedAt: z.string(),
+    })
+    .optional(),
   updatedAt: z.string().optional(),
 });
 

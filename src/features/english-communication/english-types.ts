@@ -210,6 +210,18 @@ export type GoalHistoryEntry = {
   goalMs: number;
 };
 
+export type EnglishStreakSummary = {
+  currentStreak: number;
+  longestStreak: number;
+  totalCompletedDays: number;
+  totalActiveDays: number;
+  todayKey: string;
+  todayDurationMs: number;
+  todayGoalMs: number;
+  todayGoalCompleted: boolean;
+  lastCalculatedAt: string;
+};
+
 export type EnglishCommunicationStateDoc = {
   dailyGoalMs: number;
   timezone: string;
@@ -219,6 +231,7 @@ export type EnglishCommunicationStateDoc = {
   challengeRecords: ChallengeCompletionRecord[];
   unlockedAchievements: UnlockedAchievement[];
   animationsEnabled: boolean;
+  streakSummary?: EnglishStreakSummary;
   updatedAt?: string;
 };
 

@@ -76,7 +76,10 @@ export function EnglishCommunicationClient() {
   const [journalDoc, setJournalDoc] = useState<EnglishPracticeJournalDoc>(defaultPracticeJournalDoc);
 
   const [showCelebration, setShowCelebration] = useState(false);
+  const [englishSyncError, setEnglishSyncError] = useState<string | null>(null);
+  const [stateNeedsRemoteInit, setStateNeedsRemoteInit] = useState(false);
   const celebrationTriggeredRef = useRef<Set<string>>(new Set());
+  const lastSyncedStreakHashRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -85,6 +88,11 @@ export function EnglishCommunicationClient() {
       const data = await loadAllEnglishData(user!.uid);
       if (!active) return;
       setSettings(data.state);
+      setStateNeedsRemoteInit(!data.stateExistsRemote);
+      if (data.state.streakSummary) {
+        const s = data.state.streakSummary;
+        lastSyncedStreakHashRef.current = `${s.currentStreak}:${s.longestStreak}:${s.totalCompletedDays}:${s.totalActiveDays}:${s.todayKey}:${s.todayDurationMs}:${s.todayGoalMs}:${s.todayGoalCompleted}`;
+      }
       setVocabDoc(data.vocabulary);
       setPhrasesDoc(data.phrases);
       setMistakesDoc(data.mistakes);
@@ -149,11 +157,60 @@ export function EnglishCommunicationClient() {
     async (next: EnglishCommunicationStateDoc) => {
       setSettings(next);
       if (user) {
-        await saveEnglishState(user.uid, next);
+        const res = await saveEnglishState(user.uid, next);
+        if (!res.savedRemote && res.error) {
+          setEnglishSyncError(res.error);
+          toast.error(`Cloud sync error: ${res.error}`);
+        } else if (res.savedRemote) {
+          setEnglishSyncError(null);
+          setStateNeedsRemoteInit(false);
+        }
       }
     },
     [user],
   );
+
+  // Sync derived streakSummary & initial settings to Firestore whenever authoritative session totals or goal settings change
+  useEffect(() => {
+    if (!user || !englishHydrated || !timerHydrated) return;
+
+    const hash = `${metrics.currentStreak}:${metrics.longestStreak}:${metrics.totalCompletedDays}:${metrics.totalActiveDays}:${metrics.todayKey}:${metrics.todayDurationMs}:${metrics.todayGoalMs}:${metrics.todayGoalCompleted}`;
+    if (!stateNeedsRemoteInit && lastSyncedStreakHashRef.current === hash) return;
+
+    lastSyncedStreakHashRef.current = hash;
+    const nextWithSummary: EnglishCommunicationStateDoc = {
+      ...settings,
+      unlockedAchievements: achievementEval.mergedUnlocked,
+      streakSummary: {
+        currentStreak: metrics.currentStreak,
+        longestStreak: metrics.longestStreak,
+        totalCompletedDays: metrics.totalCompletedDays,
+        totalActiveDays: metrics.totalActiveDays,
+        todayKey: metrics.todayKey,
+        todayDurationMs: metrics.todayDurationMs,
+        todayGoalMs: metrics.todayGoalMs,
+        todayGoalCompleted: metrics.todayGoalCompleted,
+        lastCalculatedAt: new Date().toISOString(),
+      },
+    };
+    void persistSettings(nextWithSummary);
+  }, [
+    user,
+    englishHydrated,
+    timerHydrated,
+    stateNeedsRemoteInit,
+    metrics.currentStreak,
+    metrics.longestStreak,
+    metrics.totalCompletedDays,
+    metrics.totalActiveDays,
+    metrics.todayKey,
+    metrics.todayDurationMs,
+    metrics.todayGoalMs,
+    metrics.todayGoalCompleted,
+    settings,
+    achievementEval.mergedUnlocked,
+    persistSettings,
+  ]);
 
   const handleSessionSaved = useCallback(
     (savedEntry: TimeEntry) => {
@@ -235,6 +292,12 @@ export function EnglishCommunicationClient() {
         if (res.nearLimit) {
           toast.warning("Vocabulary document is approaching Firestore's 1 MiB limit.");
         }
+        if (!res.savedRemote && res.error) {
+          setEnglishSyncError(res.error);
+          toast.error(`Vocabulary sync error: ${res.error}`);
+        } else if (res.savedRemote) {
+          setEnglishSyncError(null);
+        }
       }
     },
     [user],
@@ -244,7 +307,15 @@ export function EnglishCommunicationClient() {
     async (items: PhraseItem[]) => {
       const next = { items };
       setPhrasesDoc(next);
-      if (user) await saveEnglishPhrases(user.uid, next);
+      if (user) {
+        const res = await saveEnglishPhrases(user.uid, next);
+        if (!res.savedRemote && res.error) {
+          setEnglishSyncError(res.error);
+          toast.error(`Phrases sync error: ${res.error}`);
+        } else if (res.savedRemote) {
+          setEnglishSyncError(null);
+        }
+      }
     },
     [user],
   );
@@ -253,7 +324,15 @@ export function EnglishCommunicationClient() {
     async (items: GrammarMistakeItem[]) => {
       const next = { items };
       setMistakesDoc(next);
-      if (user) await saveEnglishMistakes(user.uid, next);
+      if (user) {
+        const res = await saveEnglishMistakes(user.uid, next);
+        if (!res.savedRemote && res.error) {
+          setEnglishSyncError(res.error);
+          toast.error(`Mistakes sync error: ${res.error}`);
+        } else if (res.savedRemote) {
+          setEnglishSyncError(null);
+        }
+      }
     },
     [user],
   );
@@ -262,7 +341,15 @@ export function EnglishCommunicationClient() {
     async (journals: PracticeJournalEntry[], assessments: CommunicationAssessment[]) => {
       const next = { journals, assessments };
       setJournalDoc(next);
-      if (user) await saveEnglishPracticeJournal(user.uid, next);
+      if (user) {
+        const res = await saveEnglishPracticeJournal(user.uid, next);
+        if (!res.savedRemote && res.error) {
+          setEnglishSyncError(res.error);
+          toast.error(`Journal sync error: ${res.error}`);
+        } else if (res.savedRemote) {
+          setEnglishSyncError(null);
+        }
+      }
     },
     [user],
   );
@@ -332,19 +419,25 @@ export function EnglishCommunicationClient() {
           <button
             type="button"
             onClick={() => void retrySync()}
-            className="h-8 px-3 rounded-md border border-border bg-surface text-[12px] text-text-secondary hover:text-text-primary flex items-center gap-1.5 transition-colors"
-            title="Cloud Firestore sync status"
+            className={`h-8 px-3 rounded-md border bg-surface text-[12px] flex items-center gap-1.5 transition-colors ${
+              englishSyncError || syncStatus === "error"
+                ? "border-destructive/50 text-destructive"
+                : "border-border text-text-secondary hover:text-text-primary"
+            }`}
+            title={englishSyncError || "Cloud Firestore sync status"}
           >
             <RefreshCw className={`h-3 w-3 ${syncStatus === "syncing" ? "animate-spin text-accent" : ""}`} />
-            {syncStatus === "synced"
-              ? "Synced"
-              : syncStatus === "offline"
-                ? `Offline${pendingCount > 0 ? ` (${pendingCount})` : ""}`
-                : syncStatus === "pending"
-                  ? `Pending (${pendingCount})`
-                  : syncStatus === "syncing"
-                    ? "Syncing..."
-                    : "Sync Retry"}
+            {englishSyncError
+              ? "Sync Error"
+              : syncStatus === "synced"
+                ? "Synced"
+                : syncStatus === "offline"
+                  ? `Offline${pendingCount > 0 ? ` (${pendingCount})` : ""}`
+                  : syncStatus === "pending"
+                    ? `Pending (${pendingCount})`
+                    : syncStatus === "syncing"
+                      ? "Syncing..."
+                      : "Sync Retry"}
           </button>
         </div>
       </motion.div>

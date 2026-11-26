@@ -2,7 +2,7 @@ import { doc, getDoc, onSnapshot, runTransaction, setDoc, type Unsubscribe } fro
 import type { ActiveTimer, TimeEntry } from "@/features/time-tracker/time-tracker-types";
 import { db } from "@/lib/firebase";
 import { deduplicateEntries } from "@/features/english-communication/english-streak";
-import { measurePayloadBytes } from "@/features/english-communication/english-storage";
+import { measurePayloadBytes, stripUndefined } from "@/features/english-communication/english-storage";
 
 // Scoped by userId so different accounts on the same browser never collide.
 function storageKey(userId: string) {
@@ -189,11 +189,11 @@ async function archiveOldEntriesIfNeeded(userId: string, state: TimeTrackerState
 }
 
 function normalizeRemoteState(raw: Partial<TimeTrackerState> | undefined): TimeTrackerState {
-  return {
+  return stripUndefined({
     entries: deduplicateEntries(raw?.entries ?? []),
     activeTimer: raw?.activeTimer ?? null,
     customCategories: raw?.customCategories ?? [],
-  };
+  });
 }
 
 // ─── Primary load ──────────────────────────────────────────────────────
@@ -253,16 +253,16 @@ export function subscribeTimeTrackerState(
 
 // ─── Primary save (used by legacy callers & fallback) ───────────────────
 export async function saveTimeTrackerState(userId: string, state: TimeTrackerState) {
-  const normalized: TimeTrackerState = {
+  const normalized: TimeTrackerState = stripUndefined({
     entries: deduplicateEntries(state.entries),
     activeTimer: state.activeTimer ?? null,
     customCategories: state.customCategories ?? [],
-  };
+  });
   saveToLocalStorage(userId, normalized);
 
   if (!db || !userId) return;
   try {
-    const safeState = await archiveOldEntriesIfNeeded(userId, normalized);
+    const safeState = stripUndefined(await archiveOldEntriesIfNeeded(userId, normalized));
     const metrics = getTimeTrackerDocMetrics(safeState);
     if (metrics.overLimit) {
       throw new Error("Time tracker document exceeds Firestore safe size limit.");
@@ -279,6 +279,7 @@ export async function saveTimeTrackerState(userId: string, state: TimeTrackerSta
 export async function claimActiveTimerTx(userId: string, timer: ActiveTimer): Promise<TimeTrackerState> {
   if (!db || !userId) throw new Error("Firestore not initialized.");
   const docRef = doc(db, "users", userId, "time-tracker", "state");
+  const cleanTimer = stripUndefined(timer);
 
   const nextState = await runTransaction(db, async (tx) => {
     const snap = await tx.get(docRef);
@@ -286,14 +287,14 @@ export async function claimActiveTimerTx(userId: string, timer: ActiveTimer): Pr
       ? normalizeRemoteState(snap.data() as Partial<TimeTrackerState>)
       : defaultTimeTrackerState;
 
-    if (current.activeTimer && current.activeTimer.id !== timer.id) {
+    if (current.activeTimer && current.activeTimer.id !== cleanTimer.id) {
       throw new TimerConflictError(current.activeTimer);
     }
 
-    const updated: TimeTrackerState = {
+    const updated: TimeTrackerState = stripUndefined({
       ...current,
-      activeTimer: timer,
-    };
+      activeTimer: cleanTimer,
+    });
     tx.set(docRef, updated, { merge: true });
     return updated;
   });
@@ -315,10 +316,10 @@ export async function updateActiveTimerTx(
       ? normalizeRemoteState(snap.data() as Partial<TimeTrackerState>)
       : defaultTimeTrackerState;
 
-    const updated: TimeTrackerState = {
+    const updated: TimeTrackerState = stripUndefined({
       ...current,
       activeTimer: updater(current.activeTimer),
-    };
+    });
     tx.set(docRef, updated, { merge: true });
     return updated;
   });
@@ -330,6 +331,7 @@ export async function updateActiveTimerTx(
 export async function stopActiveTimerTx(userId: string, completedEntry: TimeEntry): Promise<TimeTrackerState> {
   if (!db || !userId) throw new Error("Firestore not initialized.");
   const docRef = doc(db, "users", userId, "time-tracker", "state");
+  const cleanEntry = stripUndefined(completedEntry);
 
   const nextState = await runTransaction(db, async (tx) => {
     const snap = await tx.get(docRef);
@@ -337,17 +339,17 @@ export async function stopActiveTimerTx(userId: string, completedEntry: TimeEntr
       ? normalizeRemoteState(snap.data() as Partial<TimeTrackerState>)
       : defaultTimeTrackerState;
 
-    const mergedEntries = deduplicateEntries([completedEntry, ...current.entries]);
-    const updated: TimeTrackerState = {
+    const mergedEntries = deduplicateEntries([cleanEntry, ...current.entries]);
+    const updated: TimeTrackerState = stripUndefined({
       ...current,
       entries: mergedEntries,
       activeTimer: null,
-    };
+    });
     tx.set(docRef, updated, { merge: true });
     return updated;
   });
 
-  const archived = await archiveOldEntriesIfNeeded(userId, nextState);
+  const archived = stripUndefined(await archiveOldEntriesIfNeeded(userId, nextState));
   if (archived.entries.length !== nextState.entries.length) {
     await setDoc(docRef, archived, { merge: true });
   }
@@ -370,11 +372,11 @@ export async function mutateTimeTrackerEntriesTx(
       : defaultTimeTrackerState;
 
     const mutated = mutator(current);
-    const updated: TimeTrackerState = {
+    const updated: TimeTrackerState = stripUndefined({
       entries: deduplicateEntries(mutated.entries),
       activeTimer: mutated.activeTimer ?? current.activeTimer,
       customCategories: mutated.customCategories ?? current.customCategories ?? [],
-    };
+    });
     tx.set(docRef, updated, { merge: true });
     return updated;
   });
@@ -445,8 +447,9 @@ export async function reconcilePendingTimeTrackerOps(userId: string): Promise<{
       }
     }
 
-    tx.set(docRef, current, { merge: true });
-    return current;
+    const cleanCurrent = stripUndefined(current);
+    tx.set(docRef, cleanCurrent, { merge: true });
+    return cleanCurrent;
   });
 
   savePendingTimeTrackerOps(userId, []);
