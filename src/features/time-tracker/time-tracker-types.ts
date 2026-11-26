@@ -11,6 +11,11 @@ export const timeCategories = [
 
 export type TimeCategory = string;
 
+export type TimerInterval = {
+  start: string;
+  end: string;
+};
+
 export type TimeEntry = {
   id: string;
   title: string;
@@ -20,6 +25,9 @@ export type TimeEntry = {
   duration: number;
   date: string;
   notes?: string;
+  module?: string;
+  subcategory?: string;
+  intervals?: TimerInterval[];
 };
 
 export type ActiveTimer = {
@@ -30,6 +38,10 @@ export type ActiveTimer = {
   runningSince: string;
   accumulatedMs: number;
   status: "running" | "paused";
+  notes?: string;
+  module?: string;
+  subcategory?: string;
+  intervals?: TimerInterval[];
 };
 
 export type TimeTrackerPeriod = "today" | "week" | "month" | "year" | "lifetime";

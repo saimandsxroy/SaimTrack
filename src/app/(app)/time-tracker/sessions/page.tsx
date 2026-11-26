@@ -3,13 +3,11 @@
 import { motion } from "framer-motion";
 import { ChevronLeft, Search, Clock, CalendarDays, BarChart2, Hash, ArrowUpDown, Trash2, Save } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useMemo, useState, useTransition } from "react";
-import { toast } from "sonner";
+import { useMemo, useState } from "react";
 
-import { useAuth } from "@/features/auth/auth-context";
-import { loadTimeTrackerState, saveTimeTrackerState } from "@/features/time-tracker/time-tracker-storage";
+import { useTimeTracker } from "@/features/time-tracker/time-tracker-context";
 import { formatDuration, formatDate, formatTime } from "@/features/time-tracker/time-tracker-utils";
-import type { TimeEntry, TimeCategory, TimeTrackerPeriod } from "@/features/time-tracker/time-tracker-types";
+import type { TimeEntry, TimeCategory } from "@/features/time-tracker/time-tracker-types";
 import { timeCategories } from "@/features/time-tracker/time-tracker-types";
 import { WorkspaceModal } from "@/components/ui/workspace-modal";
 import { AutoResizeTextarea } from "@/components/ui/auto-resize-textarea";
@@ -27,10 +25,8 @@ const staggerItem = {
 type SortOption = "newest" | "oldest" | "longest" | "shortest";
 
 export default function TimeTrackerSessionsPage() {
-  const { user } = useAuth();
-  const [hydrated, setHydrated] = useState(false);
-  const [entries, setEntries] = useState<TimeEntry[]>([]);
-  const [isPending, startTransition] = useTransition();
+  const { hydrated, entries, customCategories, updateEntry, deleteEntry } = useTimeTracker();
+  const allCategories = useMemo(() => [...timeCategories, ...customCategories], [customCategories]);
 
   // Filters & Sorting
   const [query, setQuery] = useState("");
@@ -43,16 +39,6 @@ export default function TimeTrackerSessionsPage() {
   // Edit State
   const [editNotes, setEditNotes] = useState("");
   const [editCategory, setEditCategory] = useState<TimeCategory>("DSA");
-
-  useEffect(() => {
-    async function init() {
-      if (!user) return;
-      const state = await loadTimeTrackerState(user.uid);
-      setEntries(state.entries || []);
-      setHydrated(true);
-    }
-    init();
-  }, [user]);
 
   const filteredEntries = useMemo(() => {
     let result = [...entries];
@@ -68,6 +54,7 @@ export default function TimeTrackerSessionsPage() {
       result = result.filter(e => 
         e.title.toLowerCase().includes(q) || 
         e.category.toLowerCase().includes(q) ||
+        (e.subcategory && e.subcategory.toLowerCase().includes(q)) ||
         (e.notes && e.notes.toLowerCase().includes(q))
       );
     }
@@ -99,74 +86,20 @@ export default function TimeTrackerSessionsPage() {
     setSelectedEntry(null);
   }
 
-  function handleSaveEntry() {
-    if (!selectedEntry || !user) return;
-    
-    const updatedEntries = entries.map(e => {
-      if (e.id === selectedEntry.id) {
-        return { ...e, category: editCategory, notes: editNotes.trim() };
-      }
-      return e;
-    });
-
-    startTransition(() => {
-      setEntries(updatedEntries);
-      saveTimeTrackerState(user.uid, { entries: updatedEntries, activeTimer: null }); // activeTimer logic is usually preserved, this might wipe activeTimer.
-      // Wait, let's load full state first to be safe, but since this is just a quick edit, we can fetch activeTimer or just merge.
-      // Actually `saveTimeTrackerState` with `{merge: true}` is better, let's just update entries.
-    });
-
-    toast.success("Session updated.");
-    closeDrawer();
-  }
-
-  function handleDeleteEntry() {
-    if (!selectedEntry || !user) return;
-    if (!confirm("Are you sure you want to delete this session? This cannot be undone.")) return;
-
-    const updatedEntries = entries.filter(e => e.id !== selectedEntry.id);
-    
-    startTransition(() => {
-      setEntries(updatedEntries);
-      async function safeSave() {
-        if (!user) return;
-        const state = await loadTimeTrackerState(user.uid);
-        saveTimeTrackerState(user.uid, { entries: updatedEntries, activeTimer: state.activeTimer });
-      }
-      safeSave();
-    });
-
-    toast.success("Session deleted.");
-    closeDrawer();
-  }
-
-  // Safe save helper for handleSaveEntry as well
-  useEffect(() => {
-    // Just attaching a ref to latest save
-  }, []);
-
-  const handleSafeSave = async (updatedEntries: TimeEntry[]) => {
-    if (!user) return;
-    const state = await loadTimeTrackerState(user.uid);
-    saveTimeTrackerState(user.uid, { entries: updatedEntries, activeTimer: state.activeTimer });
-  }
-
   function executeSave() {
-    if (!selectedEntry || !user) return;
-    const updatedEntries = entries.map(e => e.id === selectedEntry.id ? { ...e, category: editCategory, notes: editNotes.trim() } : e);
-    setEntries(updatedEntries);
-    handleSafeSave(updatedEntries);
-    toast.success("Session updated.");
+    if (!selectedEntry) return;
+    void updateEntry({
+      ...selectedEntry,
+      category: editCategory,
+      notes: editNotes.trim(),
+    });
     closeDrawer();
   }
 
   function executeDelete() {
-    if (!selectedEntry || !user) return;
+    if (!selectedEntry) return;
     if (!confirm("Are you sure you want to delete this session?")) return;
-    const updatedEntries = entries.filter(e => e.id !== selectedEntry.id);
-    setEntries(updatedEntries);
-    handleSafeSave(updatedEntries);
-    toast.success("Session deleted.");
+    void deleteEntry(selectedEntry.id);
     closeDrawer();
   }
 
@@ -230,7 +163,7 @@ export default function TimeTrackerSessionsPage() {
             className="h-9 bg-background border border-border rounded-md px-3 text-[13px] text-text-primary focus:outline-accent flex-1 sm:flex-none"
           >
             <option value="all">All Categories</option>
-            {timeCategories.map(c => <option key={c} value={c}>{c}</option>)}
+            {allCategories.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
           <div className="relative flex-1 sm:flex-none">
             <select 
@@ -278,6 +211,11 @@ export default function TimeTrackerSessionsPage() {
                     <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-surface-raised border border-border text-text-secondary">
                       {entry.category}
                     </span>
+                    {entry.subcategory && (
+                      <span className="ml-1.5 inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-accent-subtle text-accent-text">
+                        {entry.subcategory}
+                      </span>
+                    )}
                   </td>
                   <td className="px-5 py-3.5 font-mono text-accent">
                     {formatDuration(entry.duration)}
@@ -351,7 +289,7 @@ export default function TimeTrackerSessionsPage() {
                         onChange={e => setEditCategory(e.target.value as TimeCategory)}
                         className="w-full h-9 bg-background border border-border rounded-md px-3 text-[13px] text-text-primary focus:outline-accent transition-all"
                       >
-                        {timeCategories.map(c => <option key={c} value={c}>{c}</option>)}
+                        {allCategories.map(c => <option key={c} value={c}>{c}</option>)}
                       </select>
                     </div>
                   </div>

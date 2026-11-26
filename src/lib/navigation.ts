@@ -6,6 +6,7 @@ import {
   Dumbbell,
   Goal,
   GraduationCap,
+  Languages,
   LayoutDashboard,
   type LucideIcon,
 } from "lucide-react";
@@ -31,6 +32,13 @@ export const navItems: NavItem[] = [
     href: "/time-tracker",
     icon: Clock3,
     phase: "Phase 2",
+    enabled: true,
+  },
+  {
+    title: "English Communication",
+    href: "/english-communication",
+    icon: Languages,
+    phase: "Phase 10",
     enabled: true,
   },
   {

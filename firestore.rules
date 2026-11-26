@@ -1,11 +1,43 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
+
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    // Validated rules for shared Time Tracker state
+    match /users/{userId}/time-tracker/state {
+      allow read: if isOwner(userId);
+      allow write: if isOwner(userId)
+                   && request.resource.data.entries is list;
+    }
+
+    // Validated rules for English Communication settings & state
+    match /users/{userId}/english-communication/state {
+      allow read: if isOwner(userId);
+      allow write: if isOwner(userId)
+                   && request.resource.data.dailyGoalMs is int
+                   && request.resource.data.dailyGoalMs >= 60000
+                   && request.resource.data.timezone is string
+                   && request.resource.data.goalHistory is list
+                   && request.resource.data.plannedRestDays is list
+                   && request.resource.data.celebratedGoalDates is list
+                   && request.resource.data.challengeRecords is list
+                   && request.resource.data.unlockedAchievements is list;
+    }
+
+    // Validated rules for English Communication collection documents (plus shard support)
+    match /users/{userId}/english-communication/{docId} {
+      allow read: if isOwner(userId);
+      allow write: if isOwner(userId)
+                   && (docId in ['vocabulary', 'phrases', 'mistakes', 'practice-journal']
+                       || docId.matches('^(vocabulary|phrases|mistakes|practice-journal)-shard-[0-9]+$'));
+    }
+
     // Each authenticated user can read and write only their own data
     match /users/{userId}/{document=**} {
-      allow read, write: if request.auth != null 
-                         && request.auth.uid == userId;
+      allow read, write: if isOwner(userId);
     }
 
     // Explicitly block all other access (default is deny, but this is explicit)

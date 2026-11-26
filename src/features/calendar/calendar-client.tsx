@@ -39,6 +39,13 @@ import {
   saveCalendarState,
 } from "@/features/calendar/calendar-storage";
 import { useAuth } from "@/features/auth/auth-context";
+import { useTimeTracker } from "@/features/time-tracker/time-tracker-context";
+import {
+  allocateEntryAcrossDays,
+  getDefaultTimezone,
+  getEnglishEntries,
+} from "@/features/english-communication/english-streak";
+import { formatDuration } from "@/features/time-tracker/time-tracker-utils";
 
 type EventFormValues = {
   title: string;
@@ -90,6 +97,7 @@ const staggerItem = {
 
 export function CalendarClient() {
   const { user } = useAuth();
+  const { entries: timeEntries } = useTimeTracker();
   const [hydrated, setHydrated] = useState(false);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [selectedMonth, setSelectedMonth] = useState(new Date());
@@ -97,6 +105,19 @@ export function CalendarClient() {
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<CalendarEventType | "all">("all");
   const [isPending, startTransition] = useTransition();
+
+  const englishPracticeByDate = useMemo(() => {
+    const timezone = getDefaultTimezone();
+    const map = new Map<string, { durationMs: number; count: number }>();
+    for (const entry of getEnglishEntries(timeEntries)) {
+      const alloc = allocateEntryAcrossDays(entry, timezone);
+      for (const [dateKey, ms] of alloc.entries()) {
+        const prev = map.get(dateKey) ?? { durationMs: 0, count: 0 };
+        map.set(dateKey, { durationMs: prev.durationMs + ms, count: prev.count + 1 });
+      }
+    }
+    return map;
+  }, [timeEntries]);
 
   const form = useForm<EventFormValues>({
     resolver: zodResolver(eventSchema),
@@ -295,6 +316,7 @@ export function CalendarClient() {
               <div className="grid grid-cols-7 gap-2">
                 {monthGrid.map((day) => {
                   const dayEvents = eventGroups[day.key] ?? [];
+                  const englishActivity = englishPracticeByDate.get(day.key);
                   const isSelected = selectedDate === day.key;
 
                   return (
@@ -312,11 +334,21 @@ export function CalendarClient() {
                         <span className={`text-[13px] font-medium ${day.isToday ? "text-accent underline underline-offset-4" : "text-text-primary"}`}>
                           {day.date.getDate()}
                         </span>
-                        {dayEvents.length > 0 && (
-                          <span className="text-[10px] font-medium text-text-tertiary">
-                            {dayEvents.length}
-                          </span>
-                        )}
+                        <div className="flex items-center gap-1">
+                          {englishActivity && englishActivity.durationMs > 0 && (
+                            <span
+                              className="text-[9px] font-mono px-1 py-0.5 rounded bg-accent-subtle text-accent-text"
+                              title={`English practice: ${formatDuration(englishActivity.durationMs)}`}
+                            >
+                              EN {Math.round(englishActivity.durationMs / 60000)}m
+                            </span>
+                          )}
+                          {dayEvents.length > 0 && (
+                            <span className="text-[10px] font-medium text-text-tertiary">
+                              {dayEvents.length}
+                            </span>
+                          )}
+                        </div>
                       </div>
                       
                       <div className="mt-3 flex flex-wrap gap-1">
@@ -352,6 +384,18 @@ export function CalendarClient() {
                 <p className="text-[12px] text-text-secondary mt-1">
                   {formatShortDate(selectedDate)}
                 </p>
+                {(() => {
+                  const activity = englishPracticeByDate.get(selectedDate);
+                  if (!activity || activity.durationMs <= 0) return null;
+                  return (
+                    <div className="mt-3 flex items-center justify-between rounded-md border border-border bg-accent-subtle px-3 py-2 text-[12px]">
+                      <span className="font-medium text-accent-text">English Practice</span>
+                      <span className="font-mono text-text-primary">
+                        {formatDuration(activity.durationMs)} · {activity.count} session{activity.count === 1 ? "" : "s"}
+                      </span>
+                    </div>
+                  );
+                })()}
               </div>
 
               <div className="flex flex-col">

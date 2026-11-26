@@ -11,6 +11,7 @@ const JWKS = createRemoteJWKSet(
 const PROTECTED_ROUTES = [
   '/dashboard',
   '/time-tracker',
+  '/english-communication',
   '/dsa-tracker',
   '/jobs',
   '/habits',

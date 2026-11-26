@@ -16,8 +16,7 @@ import {
   Trash2,
 } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -28,10 +27,6 @@ const ChartCard = dynamic(
   { ssr: false, loading: () => <div className="h-[212px] animate-pulse bg-surface-raised rounded-lg border border-border" /> }
 );
 
-import { Button } from "@/components/ui/button";
-import { EmptyState } from "@/components/ui/empty-state";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   buildCategorySeries,
   buildDailySeries,
@@ -49,18 +44,10 @@ import {
   toDateInputValue,
   toTimeInputValue,
 } from "@/features/time-tracker/time-tracker-utils";
-import {
-  checkpointTimerToLocalStorage,
-  defaultTimeTrackerState,
-  loadTimeTrackerState,
-  saveTimeTrackerState,
-} from "@/features/time-tracker/time-tracker-storage";
-import { useAuth } from "@/features/auth/auth-context";
+import { useTimeTracker } from "@/features/time-tracker/time-tracker-context";
 import {
   timeCategories,
-  type ActiveTimer,
   type TimeCategory,
-  type TimeEntry,
   type TimeTrackerPeriod,
 } from "@/features/time-tracker/time-tracker-types";
 
@@ -102,21 +89,35 @@ const staggerItem = {
 };
 
 export function TimeTrackerClient() {
-  const { user } = useAuth();
-  const router = useRouter();
-  const [hydrated, setHydrated] = useState(false);
-  const [entries, setEntries] = useState<TimeEntry[]>([]);
-  const [activeTimer, setActiveTimer] = useState<ActiveTimer | null>(null);
+  const {
+    hydrated,
+    entries,
+    activeTimer,
+    customCategories,
+    liveDuration,
+    syncStatus,
+    pendingCount,
+    retrySync,
+    startTimer: startSharedTimer,
+    pauseTimer: pauseSharedTimer,
+    resumeTimer: resumeSharedTimer,
+    stopTimer: stopSharedTimer,
+    discardTimer: discardSharedTimer,
+    updateActiveTimerMeta,
+    addManualEntry,
+    deleteEntry: deleteSharedEntry,
+    addCustomCategory,
+    resetWorkspace,
+  } = useTimeTracker();
+
   const [timerTitle, setTimerTitle] = useState("Focused study session");
   const [timerCategory, setTimerCategory] = useState<TimeCategory>("DSA");
-  const [customCategories, setCustomCategories] = useState<string[]>([]);
   const [isAddingCategory, setIsAddingCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
   const allCategories = useMemo(() => [...timeCategories, ...customCategories], [customCategories]);
   const [selectedPeriod, setSelectedPeriod] = useState<TimeTrackerPeriod>("today");
-  const [query, setQuery] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState<TimeCategory | "all">("all");
-  const [now, setNow] = useState(Date.now());
+  const [query] = useState("");
+  const [categoryFilter] = useState<TimeCategory | "all">("all");
   const [isPending, startTransition] = useTransition();
 
   const manualForm = useForm<ManualEntryFormValues>({
@@ -131,135 +132,11 @@ export function TimeTrackerClient() {
   });
 
   useEffect(() => {
-    async function init() {
-      if (!user) return;
-      const state = await loadTimeTrackerState(user.uid);
-      setEntries(state.entries);
-      setActiveTimer(state.activeTimer);
-      setCustomCategories(state.customCategories || []);
-      if (state.activeTimer) {
-        setTimerTitle(state.activeTimer.title);
-        setTimerCategory(state.activeTimer.category);
-      }
-      setHydrated(true);
+    if (activeTimer) {
+      setTimerTitle(activeTimer.title);
+      setTimerCategory(activeTimer.category);
     }
-    init();
-  }, [user]);
-
-  // ─── Keep a ref to the latest state for pagehide/beforeunload ───
-  const stateRef = useRef({ entries, activeTimer, customCategories });
-  useEffect(() => {
-    stateRef.current = { entries, activeTimer, customCategories };
-  }, [entries, activeTimer, customCategories]);
-
-  const hydratedRef = useRef(false);
-  useEffect(() => {
-    hydratedRef.current = hydrated;
-  }, [hydrated]);
-
-  // ─── Checkpoint to localStorage on page close (survives Windows shutdown) ───
-  useEffect(() => {
-    function checkpoint() {
-      if (!user || !hydratedRef.current) return;
-      checkpointTimerToLocalStorage(user.uid, stateRef.current);
-    }
-    // pagehide fires reliably on mobile and desktop; beforeunload is a fallback
-    window.addEventListener("pagehide", checkpoint);
-    window.addEventListener("beforeunload", checkpoint);
-    return () => {
-      window.removeEventListener("pagehide", checkpoint);
-      window.removeEventListener("beforeunload", checkpoint);
-    };
-  }, [user]);
-
-  useEffect(() => {
-    if (!activeTimer || activeTimer.status !== "running") return;
-
-    // Use Web Worker ticker to avoid background tab setInterval clamping by Chrome
-    let worker: Worker | null = null;
-    let fallbackInterval: number | null = null;
-
-    try {
-      const workerBlob = new Blob(
-        [
-          `
-          let timerId = null;
-          self.onmessage = function(e) {
-            if (e.data === "start") {
-              if (timerId) clearInterval(timerId);
-              timerId = setInterval(() => self.postMessage("tick"), 1000);
-            } else if (e.data === "stop") {
-              if (timerId) clearInterval(timerId);
-              timerId = null;
-            }
-          };
-          self.postMessage("ready");
-          `,
-        ],
-        { type: "application/javascript" },
-      );
-      const workerUrl = URL.createObjectURL(workerBlob);
-      worker = new Worker(workerUrl);
-
-      worker.onmessage = (e) => {
-        if (e.data === "ready") {
-          worker?.postMessage("start");
-        } else if (e.data === "tick") {
-          setNow(Date.now());
-        }
-      };
-    } catch {
-      fallbackInterval = window.setInterval(() => {
-        setNow(Date.now());
-      }, 1000);
-    }
-
-    function handleVisibility() {
-      // Immediately resync clock whenever user switches back to the tab
-      setNow(Date.now());
-    }
-
-    document.addEventListener("visibilitychange", handleVisibility);
-    window.addEventListener("focus", handleVisibility);
-
-    // Checkpoint to localStorage every 10s while timer is running (keeps running state fresh)
-    const checkpointInterval = window.setInterval(() => {
-      if (user && hydratedRef.current) checkpointTimerToLocalStorage(user.uid, stateRef.current);
-    }, 10_000);
-
-    return () => {
-      if (worker) {
-        worker.postMessage("stop");
-        worker.terminate();
-      }
-      if (fallbackInterval) {
-        window.clearInterval(fallbackInterval);
-      }
-      window.clearInterval(checkpointInterval);
-      document.removeEventListener("visibilitychange", handleVisibility);
-      window.removeEventListener("focus", handleVisibility);
-    };
-  }, [activeTimer?.status, user]);
-
-  const liveDuration = activeTimer
-    ? activeTimer.accumulatedMs +
-      (activeTimer.status === "running" ? now - new Date(activeTimer.runningSince).getTime() : 0)
-    : 0;
-
-  // Live document title so you can monitor the timer from other tabs (e.g. LeetCode)
-  useEffect(() => {
-    if (activeTimer && activeTimer.status === "running") {
-      document.title = `(${formatDuration(liveDuration)}) ${activeTimer.title} - SaimTrack`;
-    } else if (activeTimer && activeTimer.status === "paused") {
-      document.title = `[Paused] ${activeTimer.title} - SaimTrack`;
-    } else {
-      document.title = "Time Tracker - SaimTrack";
-    }
-
-    return () => {
-      document.title = "SaimTrack";
-    };
-  }, [activeTimer, liveDuration]);
+  }, [activeTimer?.id]);
 
   const visibleEntries = useMemo(() => {
     const scopedEntries = filterEntries(entries, selectedPeriod);
@@ -283,7 +160,6 @@ export function TimeTrackerClient() {
   const totalDuration = sumDuration(analyticsEntries);
   const entryCount = analyticsEntries.length;
   const avgDuration = averageDuration(analyticsEntries);
-  const dominantCategory = entryCount ? mostActiveCategory(analyticsEntries) : "Other";
 
   // Session Log panel always shows ALL sessions sorted newest-first (not scoped to period)
   const recentEntries = useMemo(() =>
@@ -296,19 +172,11 @@ export function TimeTrackerClient() {
   const monthlySeries = buildMonthlySeries(entries);
   const categorySeries = buildCategorySeries(entries);
 
-  function persist(nextEntries: TimeEntry[], nextTimer: ActiveTimer | null, nextCustomCategories = customCategories) {
-    setEntries(nextEntries);
-    setActiveTimer(nextTimer);
-    setCustomCategories(nextCustomCategories);
-    if (user) saveTimeTrackerState(user.uid, { entries: nextEntries, activeTimer: nextTimer, customCategories: nextCustomCategories });
-  }
-
-  function handleAddCustomCategory(e: React.FormEvent) {
+  async function handleAddCustomCategory(e: React.FormEvent) {
     e.preventDefault();
     const trimmed = newCategoryName.trim();
     if (trimmed && !allCategories.includes(trimmed)) {
-      const nextCustomCategories = [...customCategories, trimmed];
-      persist(entries, activeTimer, nextCustomCategories);
+      await addCustomCategory(trimmed);
       setTimerCategory(trimmed);
     }
     setNewCategoryName("");
@@ -316,88 +184,34 @@ export function TimeTrackerClient() {
   }
 
   function startTimer() {
-    if (activeTimer) return;
-    const current = new Date();
-    const timer: ActiveTimer = {
-      id: crypto.randomUUID(),
+    void startSharedTimer({
       title: timerTitle.trim() || "Focused study session",
       category: timerCategory,
-      startTime: current.toISOString(),
-      runningSince: current.toISOString(),
-      accumulatedMs: 0,
-      status: "running",
-    };
-    persist(entries, timer);
-    toast.success("Timer started.");
+    });
   }
 
   function pauseTimer() {
-    if (!activeTimer || activeTimer.status !== "running") return;
-    const elapsedMs =
-      activeTimer.accumulatedMs + (Date.now() - new Date(activeTimer.runningSince).getTime());
-    persist(
-      entries,
-      {
-        ...activeTimer,
-        accumulatedMs: elapsedMs,
-        status: "paused",
-      },
-    );
-    toast.success("Timer paused.");
+    void pauseSharedTimer();
   }
 
   function resumeTimer() {
-    if (!activeTimer || activeTimer.status !== "paused") return;
-    persist(
-      entries,
-      {
-        ...activeTimer,
-        runningSince: new Date().toISOString(),
-        status: "running",
-      },
-    );
-    toast.success("Timer resumed.");
+    void resumeSharedTimer();
   }
 
   function stopTimer() {
-    if (!activeTimer) return;
-    const completedDuration =
-      activeTimer.accumulatedMs +
-      (activeTimer.status === "running"
-        ? Date.now() - new Date(activeTimer.runningSince).getTime()
-        : 0);
-
-    const completedEntry: TimeEntry = {
-      id: activeTimer.id,
-      title: activeTimer.title,
-      category: activeTimer.category,
-      startTime: activeTimer.startTime,
-      endTime: new Date().toISOString(),
-      duration: completedDuration,
-      date: activeTimer.startTime,
-    };
-
     startTransition(() => {
-      const nextEntries = [completedEntry, ...entries];
-      setEntries(nextEntries);
-      setActiveTimer(null);
-      if (user) saveTimeTrackerState(user.uid, { entries: nextEntries, activeTimer: null });
+      void stopSharedTimer();
     });
-
-    toast.success("Session saved.");
   }
 
   function resetTimer() {
-    persist(entries, null);
+    void discardSharedTimer();
     setTimerTitle("Focused study session");
     setTimerCategory("DSA");
-    toast.message("Timer cleared.");
   }
 
   function deleteEntry(id: string) {
-    const nextEntries = entries.filter((entry) => entry.id !== id);
-    persist(nextEntries, activeTimer);
-    toast.success("Session removed.");
+    void deleteSharedEntry(id);
   }
 
   function exportEntries() {
@@ -414,20 +228,19 @@ export function TimeTrackerClient() {
   }
 
   function handleManualAdd(values: ManualEntryFormValues) {
-    const duration = new Date(combineDateAndTime(values.date, values.endTime)).getTime() -
-      new Date(combineDateAndTime(values.date, values.startTime)).getTime();
+    const startIso = combineDateAndTime(values.date, values.startTime);
+    const endIso = combineDateAndTime(values.date, values.endTime);
+    const duration = new Date(endIso).getTime() - new Date(startIso).getTime();
 
-    const newEntry: TimeEntry = {
-      id: crypto.randomUUID(),
+    void addManualEntry({
       title: values.title,
       category: values.category,
-      startTime: combineDateAndTime(values.date, values.startTime),
-      endTime: combineDateAndTime(values.date, values.endTime),
+      startTime: startIso,
+      endTime: endIso,
       duration,
-      date: combineDateAndTime(values.date, values.startTime),
-    };
+      date: startIso,
+    });
 
-    persist([newEntry, ...entries], activeTimer);
     manualForm.reset({
       title: "",
       category: values.category,
@@ -435,7 +248,6 @@ export function TimeTrackerClient() {
       startTime: values.startTime,
       endTime: values.endTime,
     });
-    toast.success("Manual session added.");
   }
 
   if (!hydrated) {
@@ -466,7 +278,22 @@ export function TimeTrackerClient() {
               Live execution and historical logs.
             </p>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 flex-wrap">
+            {syncStatus !== "synced" && (
+              <button
+                type="button"
+                onClick={() => void retrySync()}
+                className="text-[11px] font-medium px-2.5 py-1 rounded-md border border-border bg-surface-raised text-accent hover:border-border-hover transition-colors"
+              >
+                {syncStatus === "syncing"
+                  ? "Syncing..."
+                  : syncStatus === "offline"
+                    ? `Offline${pendingCount > 0 ? ` (${pendingCount})` : ""}`
+                    : syncStatus === "pending"
+                      ? `Pending Sync (${pendingCount})`
+                      : "Sync Error · Retry"}
+              </button>
+            )}
             <Link 
               href="/time-tracker/sessions" 
               className="text-[13px] font-medium text-text-secondary hover:text-text-primary transition-colors border border-border bg-surface hover:bg-surface-raised px-4 py-1.5 rounded-md flex items-center gap-2"
@@ -480,9 +307,7 @@ export function TimeTrackerClient() {
               <span className="text-text-tertiary">|</span>
               <button 
                 onClick={() => {
-                  setEntries(defaultTimeTrackerState.entries);
-                  setActiveTimer(defaultTimeTrackerState.activeTimer);
-                  toast.message("Workspace cleared.");
+                  if (confirm("Reset all Time Tracker sessions?")) void resetWorkspace();
                 }} 
                 className="flex items-center gap-2 text-[13px] font-medium text-text-secondary hover:text-text-primary transition-colors"
               >
@@ -501,7 +326,17 @@ export function TimeTrackerClient() {
           <div className="p-8 flex flex-col md:flex-row items-center gap-10">
             {/* Clock Display */}
             <div className="shrink-0 text-center md:text-left">
-              <div className="text-[11px] font-medium text-text-tertiary uppercase tracking-[0.06em] mb-2">Live Session</div>
+              <div className="flex items-center justify-center md:justify-start gap-2 mb-2">
+                <span className="text-[11px] font-medium text-text-tertiary uppercase tracking-[0.06em]">Live Session</span>
+                {activeTimer?.module === "english-communication" && (
+                  <Link
+                    href="/english-communication"
+                    className="text-[10px] font-medium px-2 py-0.5 rounded bg-accent-subtle text-accent-text hover:opacity-90 transition-opacity"
+                  >
+                    English{activeTimer.subcategory ? ` · ${activeTimer.subcategory}` : ""}
+                  </Link>
+                )}
+              </div>
               <div className="text-[64px] font-semibold text-text-primary tracking-tighter leading-none tabular-nums">
                 {formatDuration(liveDuration)}
               </div>
@@ -543,7 +378,7 @@ export function TimeTrackerClient() {
                   value={timerTitle}
                   onChange={(e) => {
                     setTimerTitle(e.target.value);
-                    if (activeTimer) setActiveTimer(curr => curr ? { ...curr, title: e.target.value } : curr);
+                    if (activeTimer) updateActiveTimerMeta({ title: e.target.value });
                   }}
                   className="w-full bg-transparent border-b border-border text-[20px] font-medium text-text-primary py-2 outline-none focus:border-accent transition-colors placeholder:text-text-tertiary"
                   placeholder="What are you working on?"
@@ -557,7 +392,7 @@ export function TimeTrackerClient() {
                       key={cat}
                       onClick={() => {
                         setTimerCategory(cat);
-                        if (activeTimer) setActiveTimer(curr => curr ? { ...curr, category: cat } : curr);
+                        if (activeTimer) updateActiveTimerMeta({ category: cat });
                       }}
                       className={`h-7 px-3 rounded-md text-[12px] font-medium transition-colors ${
                         timerCategory === cat 
@@ -705,9 +540,11 @@ export function TimeTrackerClient() {
                         className="group flex flex-col py-3 border-b border-border last:border-0"
                       >
                         <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3 min-w-0">
+                          <div className="flex items-center gap-2.5 min-w-0">
                             <span className="text-[13px] font-medium text-text-primary truncate">{entry.title}</span>
-                            <span className="text-[10px] uppercase tracking-wider text-accent shrink-0">{entry.category}</span>
+                            <span className="text-[10px] uppercase tracking-wider text-accent shrink-0">
+                              {entry.subcategory ? `${entry.category} · ${entry.subcategory}` : entry.category}
+                            </span>
                           </div>
                           <div className="flex items-center gap-3 shrink-0">
                             <span className="text-[12px] font-mono text-text-primary">{formatDuration(entry.duration)}</span>
